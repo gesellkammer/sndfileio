@@ -2,8 +2,8 @@ from scipy import signal
 import numpy as np
 import warnings
 from typing import Tuple, Sequence as Seq, Union
-
 from .util import apply_multichannel
+
 
 def lowpass_cheby2(samples, freq, sr, maxorder=12):
     # type: (np.ndarray, float, int, int) -> np.ndarray
@@ -23,6 +23,8 @@ def lowpass_cheby2(samples, freq, sr, maxorder=12):
     sr      : Sampling rate in Hz.
     maxorder: Maximal order of the designed cheby2 filter
     """
+    if freq > sr*0.5:
+        raise ValueError("Can't filter freq. above nyquist")
     b, a, freq_passband = lowpass_cheby2_coeffs(freq, sr, maxorder)
     return signal.lfilter(b, a, samples)
 
@@ -41,8 +43,8 @@ def lowpass_cheby2_coeffs(freq, sr, maxorder=12):
     nyquist = sr * 0.5
     # rp - maximum ripple of passband, rs - attenuation of stopband
     rp, rs, order = 1, 96, 1e99
-    ws = freq / nyquist # stop band frequency
-    wp = ws # pass band frequency
+    ws = freq / nyquist  # stop band frequency
+    wp = ws              # pass band frequency
     # raise for some bad scenarios
     if ws > 1:
         ws = 1.0

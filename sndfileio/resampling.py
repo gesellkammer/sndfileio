@@ -1,7 +1,19 @@
+from __future__ import division
+import scipy.signal as sig
 import warnings
 import numpy as np
 from .dsp import lowpass_cheby2
 from typing import List, Optional as Opt, Callable
+import logging
+
+try:
+    from math import gcd
+except ImportError:
+    from fractions import gcd
+
+
+logger = logging.getLogger("sndfileio")
+
 
 def _apply_by_channel(samples, func):
     # type: (np.ndarray, Callable[[np.ndarray], np.ndarray]) -> np.ndarray
@@ -27,9 +39,146 @@ def _resample_scipy(samples, sr, newsr, window='hanning'):
 
     ratio = newsr/sr
     num_new_samples = int(ratio * len(samples) + 0.5)
-    def func(samples):
-        return scipy.signal.resample(samples, num_new_samples, window=window)
-    return _apply_by_channel(samples, func)
+
+    return _apply_by_channel(
+        samples, 
+        lambda samples: scipy.signal.resample(samples, num_new_samples, window=window)
+    )
+
+
+def _resample_samplerate(samples, sr, newsr):
+    """
+    Uses https://github.com/tuxu/python-samplerate
+    """
+    try:
+        import samplerate
+    except ImportError:
+        return None
+
+    ratio = newsr/sr
+    return _apply_by_channel(
+        samples,
+        lambda samples: samplerate.resample(samples, ratio, 'sinc_best')
+    )
+
+#######################################################
+
+# global cache of resamplers
+_precomputed_filters = {}
+
+
+def _nnresample_compute_filt(up, down, beta=5.0, L=32001):
+    r"""
+    Computes a filter to resample a signal from rate "down" to rate "up"
+    
+    Parameters
+    ----------
+    up : int
+        The upsampling factor.
+    down : int
+        The downsampling factor.
+    beta : float
+        Beta factor for Kaiser window.  Determines tradeoff between
+        stopband attenuation and transition band width
+    L : int
+        FIR filter order.  Determines stopband attenuation.  The higher
+        the better, ath the cost of complexity.
+        
+    Returns
+    -------
+    filt : array
+        The FIR filter coefficients
+        
+    Notes
+    -----
+    This function is to be used if you want to manage your own filters
+    to be used with scipy.signal.resample_poly (use the `window=...`
+    parameter).  WARNING: Some versions (at least 0.19.1) of scipy
+    modify the passed filter, so make sure to make a copy beforehand:
+    
+    out = scipy.signal.resample_poly(in up, down, window=numpy.array(filt))
+    """
+    
+    # Determine our up and down factors
+    g = gcd(up, down)
+    up = up//g
+    down = down//g
+    max_rate = max(up, down)
+
+    sfact = np.sqrt(1+(beta/np.pi)**2)
+            
+    # generate first filter attempt: with 6dB attenuation at f_c.
+    init_filt = sig.fir_filter_design.firwin(L, 1/max_rate, window=('kaiser', beta))
+    
+    # convert into frequency domain
+    N_FFT = 2**19
+    NBINS = N_FFT/2+1
+    paddedfilt = np.zeros(N_FFT)
+    paddedfilt[:L] = init_filt
+    ffilt = np.fft.rfft(paddedfilt)
+    
+    # now find the minimum between f_c and f_c+sqrt(1+(beta/pi)^2)/L
+    bot = int(np.floor(NBINS/max_rate))
+    top = int(np.ceil(NBINS*(1/max_rate + 2*sfact/L)))
+    firstnull = (np.argmin(np.abs(ffilt[bot:top])) + bot)/NBINS
+    
+    # generate the proper shifted filter
+    return sig.fir_filter_design.firwin(L, -firstnull+2/max_rate, window=('kaiser', beta))
+    
+
+def _resample_nnresample(samples, sr, newsr):
+    return _apply_by_channel(
+        samples,
+        lambda s: _resample_nnresample2(s, newsr, sr)[:-1]
+    )
+    # return _resample_nnresample2(samples, newsr, sr)
+
+
+def _resample_nnresample2(s, up, down, beta=5.0, L=16001, axis=0):
+    r"""
+    Taken from https://github.com/jthiem/nnresample
+
+    Resample a signal from rate "down" to rate "up"
+    
+    Parameters
+    ----------
+    x : array_like
+        The data to be resampled.
+    up : int
+        The upsampling factor.
+    down : int
+        The downsampling factor.
+    beta : float
+        Beta factor for Kaiser window.  Determines tradeoff between
+        stopband attenuation and transition band width
+    L : int
+        FIR filter order.  Determines stopband attenuation.  The higher
+        the better, ath the cost of complexity.
+    axis : int, optional
+        The axis of `x` that is resampled. Default is 0.
+        
+    Returns
+    -------
+    resampled_x : array
+        The resampled array.
+        
+    Notes
+    -----
+    The function keeps a global cache of filters, since they are
+    determined entirely by up, down, beta, and L.  If a filter
+    has previously been used it is looked up instead of being
+    recomputed.
+    """       
+    # check if a resampling filter with the chosen parameters already exists
+    params = (up, down, beta, L)
+    if params in _precomputed_filters.keys():
+        # if so, use it.
+        filt = _precomputed_filters[params]
+    else:
+        # if not, generate filter, store it, use it
+        filt = _nnresample_compute_filt(up, down, beta, L)
+        _precomputed_filters[params] = filt
+    return sig.resample_poly(s, up, down, window=np.array(filt), axis=axis)
 
 
 def _resample_scikits(samples, sr, newsr):
@@ -38,17 +187,25 @@ def _resample_scikits(samples, sr, newsr):
         import scikits.samplerate
     except ImportError:
         return None
+    
     ratio = newsr / sr
-    return scikits.samplerate.resample(samples, ratio, 'sinc_best')
+    return _apply_by_channel(
+        samples,
+        lambda samples: scikits.samplerate.resample(samples, ratio, 'sinc_best')
+    )
+
 
 def _resample_obspy(samples, sr, newsr, window='hanning', lowpass=True):
     # type: (np.ndarray, int, int, str, bool) -> np.ndarray
     """
-    Resample using Fourier method.
+    Resample using Fourier method. The same as resample_scipy but with
+    low-pass filtering for upsampling
+
     """
-    import scipy.signal    
+    import scipy.signal
+    from math import ceil
     factor = sr/float(newsr)
-    if lowpass:
+    if newsr < sr and lowpass:
         # be sure filter still behaves good
         if factor > 16:
             msg = "Automatic filter design is unstable for resampling " + \
@@ -56,11 +213,15 @@ def _resample_obspy(samples, sr, newsr, window='hanning', lowpass=True):
                   "above 16. Manual resampling is necessary."
             warnings.warn(msg)
         freq = min(sr, newsr) * 0.5 / float(factor)
+        logger.debug(f"resample_obspy: lowpass {freq}")
         samples = lowpass_cheby2(samples, freq=freq, sr=sr, maxorder=12)
-    num = len(samples) / factor
-    def func(samples):
-        return scipy.signal.resample(samples, num, window=window)
-    return _apply_by_channel(samples, func)
+    num = int(ceil(len(samples) / factor))
+
+    return _apply_by_channel(
+        samples, 
+        lambda samples: scipy.signal.resample(samples, num, window=window)
+    )
+
 
 def resample(samples, oldsr, newsr):
     # type: (np.ndarray, int, int) -> np.ndarray
@@ -73,13 +234,15 @@ def resample(samples, oldsr, newsr):
 
     Returns --> the new samples
     """
-    backends = [_resample_scikits, _resample_obspy, _resample_scipy] # type: List[Callable[[np.ndarray, int, int], Opt[np.ndarray]]]
+    backends = [
+        _resample_samplerate,   # turns the samples into float32, which is ok for audio 
+        _resample_scikits,
+        _resample_nnresample,   # very good results, pure python, follows libsamplerate very closely
+        _resample_obspy,        # these last two introduce some error at the first samples
+        _resample_scipy
+    ]  # type: List[Callable[[np.ndarray, int, int], Opt[np.ndarray]]]
+
     for backend in backends:
         newsamples = backend(samples, oldsr, newsr)
         if newsamples is not None:
             return newsamples
-    
-    raise ImportError(
-        "no backends present to perform resampling."
-        "At least scikits.samplerate or scipy should be present"
-        )

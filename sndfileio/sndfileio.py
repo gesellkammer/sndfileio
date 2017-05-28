@@ -55,10 +55,14 @@ import struct as _struct
 import warnings as _warnings
 import numpy as np
 from .util import numchannels
+import logging
 from typing import (
     Tuple, Union, Any, Iterator, Optional as Opt, 
     List, cast, IO, NamedTuple
 )
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("sndfileio")
 
 __all__ = [
     "sndread",
@@ -151,12 +155,13 @@ _DEFAULT_CHUNKSIZE = 512
 #
 ########################################
 
-class _SndWriter(object):
+class _SndWriter:
     
-    def __init__(self, sr:int, outfile:str, encoding:str) -> None:
+    def __init__(self, parent, sr:int, outfile:str, encoding:str) -> None:
         self.sr = sr
         self.outfile = outfile
         self.encoding = encoding
+        self._parent = parent
         self._file = None
 
     def write(self, frames: np.ndarray) -> None:
@@ -164,12 +169,20 @@ class _SndWriter(object):
 
     def close(self):
         self._file.close()
+        self._file = None
 
     def __enter__(self):
         return self
 
     def __exit__(self):
         self.close()
+
+    def get_backend(self):
+        return self._parent.get_backend()
+
+    @property
+    def filetypes(self):
+        return self._parent.filetypes_write
 
 
 def sndread(path:str) -> Tuple[np.ndarray, int]:
@@ -180,6 +193,7 @@ def sndread(path:str) -> Tuple[np.ndarray, int]:
     Returns (data:ndarray, sr:int)
     """
     backend = _get_backend(path)
+    logger.debug(f"sndread: using backend {backend.name}")
     return backend.read(path)
 
 
@@ -190,6 +204,7 @@ def sndread_chunked(path:str, frames:int=_DEFAULT_CHUNKSIZE) -> Iterator[np.ndar
     """
     backend = _get_backend(path, key=lambda backend: backend.can_read_in_chunks)
     if backend:
+        logger.debug(f"sndread_chunked: using backend {backend.name}")
         return backend.read_chunked(path, frames)
     else:
         raise SndfileError("chunked reading is not supported by the available backends")
@@ -204,6 +219,7 @@ def sndinfo(path:str) -> SndInfo:
     RETURNS --> an instance of SndInfo: samplerate, nframes, channels, encoding, fileformat
     """
     backend = _get_backend(path)
+    logger.debug(f"sndinfo: using backend {backend.name}")
     return backend.getinfo(path)
 
 
@@ -246,6 +262,7 @@ def sndwrite(samples:np.ndarray, sr:int, outfile:str, encoding:str='auto') -> No
     backend = _get_write_backend(outfile, encoding)
     if not backend:
         raise SndfileError("No backend found to support the given format")
+    logger.debug(f"sndwrite: using backend {backend.name}")
     return backend.write(samples, sr, outfile, encoding)
 
 
@@ -272,6 +289,7 @@ def sndwrite_chunked(sr: int, outfile: str, encoding: str) -> _SndWriter:
         raise SndfileError("No backend found to support the given format")
     print(possible_backends)
     backend = min(possible_backends, key=lambda backend:backend.priority)
+    logger.debug(f"sndwrite_chunked: using backend {backend.name}")
     return backend.writer(sr, outfile, encoding)
 
 
@@ -365,20 +383,16 @@ def sndwrite_chunked_like(likefile:str, outfile:str) -> _SndWriter:
 ############################################
 
 
-
 class _PySndfileWriter(_SndWriter):
 
-    def __init__(self, sr:int, outfile:str, encoding:str) -> None:
-        super().__init__(sr, outfile, encoding)
-    
     def _openfile(self, channels:int) -> None:
         major = _os.path.splitext(self.outfile)[1]
-        if major not in _PySndfile.supported_filetypes_write:
+        if major not in self.filetypes:
             raise ValueError("Format %s not supported by this backend" % major)
-        pysndfile = _PySndfile.get_backend()
+        backend = self.get_backend()
         ext = _os.path.splitext(self.outfile)[1]
-        sndformat = _PySndfile._get_sndfile_format(ext, self.encoding)
-        self._file = pysndfile.PySndfile(self.outfile, "w", sndformat, channels, self.sr)
+        sndformat = self._parent._get_sndfile_format(ext, self.encoding)
+        self._file = backend.PySndfile(self.outfile, "w", sndformat, channels, self.sr)
 
     def write(self, frames:np.ndarray) -> None:
         if self._file:
@@ -396,112 +410,126 @@ class _PySndfileWriter(_SndWriter):
         self._file = None
 
 
+class _Backend:
+    def __init__(self, priority, filetypes, filetypes_write, encodings, 
+                 can_read_in_chunks, can_write_in_chunks, name):
+        self.priority = priority
+        self.filetypes = filetypes
+        self.filetypes_write = filetypes_write
+        self.encodings = encodings
+        self.can_write_in_chunks = can_read_in_chunks
+        self.can_write_in_chunks = can_write_in_chunks
+        self.name = name
+        self._backend = None
+        self._writer = None
 
-class _PySndfile(object):
-    priority = 0
-    supported_filetypes = ".aif .aiff .wav .flac .ogg .wav64 .caf .raw".split()
-    supported_filetypes_write = ".aif .aiff .wav .flac .ogg .wav64 .caf .raw".split()
-    encodings = 'pcm16 pcm24 flt32'.split()
-    can_read_in_chunks = True
-    can_write_in_chunks = True
-    backend_name = 'pysndfile'
-    writer = _PySndfileWriter
-    backend = None
+    @staticmethod
+    def _get_backend():
+        return None
+
+    def get_backend(self):
+        if self._backend is not None:
+            return self._backend
+        self._backend = self._get_backend()
+        return self._backend
+
+    def is_available(self) -> bool:
+        return self.get_backend() is not None
     
-    @classmethod
-    def get_backend(cls):
-        if cls.backend is not None:
-            return cls.backend
+    def writer(self, sr:int, outfile:str, encoding:str) -> _SndWriter:
+        if self._writer is None:
+            raise SndfileError("This backend does not support writing")
+        return self._writer(self, sr, outfile, encoding)
+
+    def check_write(self, outfile, encoding):
+        if encoding not in self.encodings:
+            raise ValueError("Encoding not supported")
+        ext = _os.path.splitext(outfile)[1].lower()
+        if ext not in self.filetypes_write:
+            raise ValueError(
+                "The given format (%s) is not supported by the %s backend" %
+                (ext, self.name)
+            )
+
+
+class _PySndfile(_Backend):
+    def __init__(self, priority):
+        super().__init__(
+            priority  = priority,
+            filetypes = ".aif .aiff .wav .flac .ogg .wav64 .caf .raw".split(),
+            filetypes_write = ".aif .aiff .wav .flac .ogg .wav64 .caf .raw".split(),
+            encodings = 'pcm16 pcm24 flt32'.split(),
+            can_read_in_chunks = True,
+            can_write_in_chunks = False,
+            name = 'pysndfile'
+        )
+        self._writer = _PySndfileWriter
+    
+    @staticmethod
+    def _get_backend():
         try:
             import pysndfile
-            cls.backend = pysndfile
-            return cls.backend
+            return pysndfile
         except ImportError:
             return None
 
-    @classmethod
-    def is_available(cls) -> bool:
-        backend = cls.get_backend()
-        if backend:
-            return True
-        return False
-
-    @classmethod
-    def read(cls, path:str) -> Sample:
-        pysndfile = cls.get_backend()
+    def is_available(self) -> bool:
+        return self.get_backend() is not None
+        
+    def read(self, path:str) -> Sample:
+        pysndfile = self.get_backend()
         snd = pysndfile.PySndfile(path)
         data = snd.read_frames(snd.frames())
         sr = snd.samplerate()
         return Sample(data, sr)
 
-    @classmethod
-    def read_chunked(cls, path:str, chunksize:int=_DEFAULT_CHUNKSIZE) -> Iterator[np.ndarray]:
-        pysndfile = cls.get_backend()
+    def read_chunked(self, path:str, chunksize:int=_DEFAULT_CHUNKSIZE
+                     ) -> Iterator[np.ndarray]:
+        pysndfile = self.get_backend()
         snd = pysndfile.PySndfile(path)
         for pos, nframes in _chunks(0, snd.frames(), chunksize):
             yield snd.read_frames(nframes)
 
-    @classmethod
-    def getinfo(cls, path:str) -> SndInfo:
-        pysndfile = cls.get_backend()
+    def getinfo(self, path:str) -> SndInfo:
+        pysndfile = self.get_backend()
         snd = pysndfile.PySndfile(path)
         return SndInfo(snd.samplerate(), snd.frames(), snd.channels(),
                        snd.encoding_str(), snd.major_format_str())
 
-    @classmethod
-    def write(cls, data:np.ndarray, sr:int, outfile:str, encoding:str) -> None:
-        if encoding not in cls.encodings:
-            raise ValueError("correct")
+    def write(self, data:np.ndarray, sr:int, outfile:str, encoding:str) -> None:
+        self.check_write(outfile, encoding)
         ext = _os.path.splitext(outfile)[1].lower()
-        if ext not in cls.supported_filetypes:
-            raise ValueError(
-                "The given format (%s) is not supported by the %s backend" %
-                (ext, cls.backend_name)
-            )
-        fmt = cls._get_sndfile_format(ext, encoding)
-        pysndfile = cls.get_backend()
+        fmt = self._get_sndfile_format(ext, encoding)
+        pysndfile = self.get_backend()
         snd = pysndfile.PySndfile(outfile, mode='w', format=fmt,
                                   channels=numchannels(data), samplerate=sr)
         snd.write_frames(data)
-        # snd.close()
+        snd.writeSync()
 
-    @classmethod
-    def writer(cls, sr:int, outfile:str, encoding:str) -> _SndWriter:
-        return _PySndfileWriter(sr, outfile, encoding)
-
-    @classmethod
-    def _get_sndfile_format(cls, extension, encoding):
-        assert extension in cls.supported_filetypes
-
-        def _parse_encoding(encoding):
-            # format --> pcm, flt  | bits --> 16, 24, 32, etc.
-            format, bits = encoding[:3], int(encoding[3:])
-            assert (format in ('pcm, flt')) and (bits in (8, 16, 24, 32))
-            return format, bits
-        format, bits = _parse_encoding(encoding)
+    def _get_sndfile_format(self, extension, encoding):
+        assert extension in self.filetypes
+        fmt, bits = encoding[:3], int(encoding[3:])
+        assert fmt in ('pcm', 'flt') and bits in (8, 16, 24, 32)
         extension = extension[1:]
         if extension == 'aif':
             extension = 'aiff'
-        format = "%s%d" % (
+        fmt = "%s%d" % (
             {'pcm': 'pcm', 
-             'flt': 'float'}[format],
+             'flt': 'float'}[fmt],
             bits
         )
-        pysndfile = cls.get_backend()
-        return pysndfile.construct_format(extension, format)
+        pysndfile = self.get_backend()
+        return pysndfile.construct_format(extension, fmt)
 
 
 class _AudiolabWriter(_SndWriter):
-    def __init__(self, sr: int, outfile: str, encoding: str) -> None:
-        super().__init__(sr, outfile, encoding)
-        self._file = None
-
+    
     def _openfile(self, channels:int) -> None:
         major = _os.path.splitext(self.outfile)[1][1:]
-        if major not in _Audiolab.supported_filetypes_write:
+        if major not in self.filetypes:
             raise ValueError("Format %s not supported by this backend" % major)
         encoding = _normalize_encoding(encoding)
-        audiolab = _Audiolab.get_backend()
+        audiolab = self.get_backend()
         sndformat = audiolab.Format(major, encoding)
         self._file = audiolab.Sndfile(self.outfile, "w",
                                       sndformat, channels, self.sr)
@@ -515,113 +543,90 @@ class _AudiolabWriter(_SndWriter):
             self.write(frames)
 
 
-class _Audiolab(object):
-    priority = 1
-    supported_filetypes = ".aif .aiff .wav .flac .ogg .wav64 .caf .raw".split()
-    supported_filetypes_write = ".aif .aiff .wav .flac .ogg .wav64 .caf .raw".split()
-    encodings = 'pcm16 pcm24 flt32'.split()
-    can_read_in_chunks = True
-    can_write_in_chunks = True
-    backend = None
-    backend_name = 'scikits.audiolab'
-    writer = _AudiolabWriter
-    
-    @classmethod
-    def get_backend(cls):
-        if cls.backend is not None:
-            return cls.backend
+class _Audiolab(_Backend):
+    def __init__(self, priority):
+        super().__init__(
+            priority = priority,
+            filetypes = ".aif .aiff .wav .flac .ogg .wav64 .caf .raw".split(),
+            filetypes_write = ".aif .aiff .wav .flac .ogg .wav64 .caf .raw".split(),
+            encodings = 'pcm16 pcm24 flt32'.split(),
+            can_read_in_chunks = True,
+            can_write_in_chunks = True,
+            name = 'scikits.audiolab',
+        )
+        self._writer = _AudiolabWriter
+
+    def _get_backend(self):
         try:
             from scikits import audiolab
-            cls.backend = audiolab
-            return cls.backend
+            return audiolab
         except ImportError:
             return None
-
-    @classmethod
-    def is_available(cls) -> bool:
-        backend = cls.get_backend()
-        if backend:
-            return True
-        return False
-
-    @classmethod
-    def read(cls, path:str) -> Sample:
-        audiolab = cls.get_backend()
+    
+    def read(self, path:str) -> Sample:
+        audiolab = self.get_backend()
         snd = audiolab.Sndfile(path)
         data = snd.read_frames(snd.nframes)
         sr = snd.samplerate
         return Sample(data, sr)
 
-    @classmethod
-    def read_chunked(cls, path:str, chunksize:int=_DEFAULT_CHUNKSIZE) -> Iterator[np.ndarray]:
-        audiolab = cls.get_backend()
+    def read_chunked(self, 
+                     path:str, 
+                     chunksize:int=_DEFAULT_CHUNKSIZE
+                     ) -> Iterator[np.ndarray]:
+        audiolab = self.get_backend()
         snd = audiolab.Sndfile(path)
         for pos, nframes in _chunks(0, snd.nframes, chunksize):
             yield snd.read_frames(nframes)
 
-    @classmethod
-    def getinfo(cls, path:str) -> SndInfo:
-        audiolab = cls.get_backend()
+    def getinfo(self, path:str) -> SndInfo:
+        audiolab = self.get_backend()
         snd = audiolab.Sndfile(path)
         return SndInfo(snd.samplerate, snd.nframes, snd.channels,
                        snd.encoding, snd.file_format)
 
-    @classmethod
-    def write(cls, data:np.ndarray, sr:int, outfile:str, encoding:str) -> None:
-        if encoding not in cls.encodings:
-            raise ValueError("correct")
-        ext = _os.path.splitext(outfile)[1].lower()
-        if ext not in cls.supported_filetypes:
-            raise ValueError(
-                "The given format (%s) is not supported by the %s backend" %
-                (ext, cls.backend_name)
-            )
-        format = cls._get_sndfile_format(ext, encoding)
-        audiolab = cls.get_backend()
-        snd = audiolab.Sndfile(outfile, mode='w', format=format,
+    def write(self, data:np.ndarray, sr:int, outfile:str, encoding:str) -> None:
+        self.check_write(outfile, encoding)
+        ext = _os.path.splitext(outfile)[1]
+        fmt = self._get_sndfile_format(ext, encoding)
+        audiolab = self.get_backend()
+        snd = audiolab.Sndfile(outfile, mode='w', format=fmt,
                                channels=numchannels(data), samplerate=sr)
         snd.write_frames(data)
         snd.close()
 
-    @classmethod
-    def writer(cls, sr:int, outfile:str, encoding:str) -> _SndWriter:
-        return _AudiolabWriter(sr, outfile, encoding)
-
-    @classmethod
-    def _get_sndfile_format(cls, extension:str, encoding:str) -> Any:
-        assert extension in cls.supported_filetypes
-
-        def _parse_encoding(encoding):
-            # format --> pcm, flt  | bits --> 16, 24, 32, etc.
-            format, bits = encoding[:3], int(encoding[3:])
-            assert (format in ('pcm, flt')) and (bits in (8, 16, 24, 32))
-            return format, bits
-        format, bits = _parse_encoding(encoding)
+    def _get_sndfile_format(self, extension:str, encoding:str) -> Any:
+        assert extension in self.filetypes
+        fmt, bits = encoding[:3], int(encoding[3:])
+        assert fmt in ('pcm', 'flt') and bits in (8, 16, 24, 32)
         extension = extension[1:]
         if extension == 'aif':
             extension = 'aiff'
-        format = "%s%d" % (
-            {'pcm': 'pcm', 'flt': 'float'}[format],
+        fmt2 = "%s%d" % (
+            {'pcm': 'pcm', 'flt': 'float'}[fmt],
             bits
         )
-        audiolab = cls.get_backend()
-        return audiolab.Format(extension, format)
+        audiolab = self.get_backend()
+        return audiolab.Format(extension, fmt2)
     
     
-class _Builtin(object):
-    priority = 100
-    supported_filetypes = (".wav", ".aif", ".aiff")
-    supported_filetypes_write = []  # type: List[str]
-    can_read_in_chunks = True
-    can_write_in_chunks = False
-    backend_name = 'builtin'
+class _Builtin(_Backend):
+    def __init__(self, priority):
+        super().__init__(
+            priority = priority,
+            filetypes = (".wav", ".aif", ".aiff"),
+            filetypes_write = [],
+            encodings = 'pcm16 pcm24 flt32'.split(),
+            can_read_in_chunks = True,
+            can_write_in_chunks = False,
+            name = 'builtin' 
+        )
+        self._writer = None
 
-    @staticmethod
-    def is_available() -> bool:
+    def is_available(self):
         return True
 
-    @staticmethod
-    def read(path:str) -> np.ndarray:
+    def read(self, path:str) -> np.ndarray:
         ext = _os.path.splitext(path)[1].lower()
         if ext in (".aif", ".aiff"):
             return _AiffReader(path).read()
@@ -630,8 +635,7 @@ class _Builtin(object):
         else:
             raise ValueError("format not supported")
 
-    @staticmethod
-    def getinfo(path:str) -> SndInfo:
+    def getinfo(self, path:str) -> SndInfo:
         ext = _os.path.splitext(path)[1].lower()
         if ext in (".aif", ".aiff"):
             return _AiffReader(path).getinfo()
@@ -640,8 +644,8 @@ class _Builtin(object):
         else:
             raise ValueError("Only sndfiles with ext. aif, aiff or wav are supported")
 
-    @staticmethod
-    def read_chunked(path:str, chunksize:int=_DEFAULT_CHUNKSIZE) -> Iterator[np.ndarray]:
+    def read_chunked(self, path:str, chunksize:int=_DEFAULT_CHUNKSIZE
+                     ) -> Iterator[np.ndarray]:
         ext = _os.path.splitext(path)[1].lower()
         if ext == '.wav':
             return _WavReader(path).read_chunked(chunksize)
@@ -649,7 +653,19 @@ class _Builtin(object):
             raise NotImplementedError("read_chunked not implemented")
 
 
-_BACKENDS = [_Builtin, _PySndfile, _Audiolab]  # type: List[type]
+_BACKENDS = [
+    _Builtin(priority=100), 
+    _PySndfile(priority=0), 
+    _Audiolab(priority=1)
+]  # type: List[_Backend]
+
+
+def report_backends():
+    for b in _BACKENDS:
+        if b.is_available():
+            logger.info(f"Backend {b.name} available. Priority: {b.priority}")
+        else:
+            logger.info(f"Backend {b.name} NOT available")            
     
 
 ###########################################
@@ -658,7 +674,7 @@ _BACKENDS = [_Builtin, _PySndfile, _Audiolab]  # type: List[type]
 #
 ###########################################
 
-class _WavReader(object):
+class _WavReader:
     def __init__(self, path:str) -> None:
         self.path = path
         fsize, self._big_endian = _wav_read_riff_chunk(open(path))
@@ -679,7 +695,7 @@ class _WavReader(object):
         return _wav_read_chunked(self.path, chunksize)
 
 
-class _AiffReader(object):
+class _AiffReader:
     def __init__(self, path:str) -> None:
         self.path = path
         self._info = None  # type: Opt[SndInfo]
@@ -813,7 +829,8 @@ def _wav_read_data(fid,
         elif encoding == 'pcm24':
             # this conversion approach is really bad for long files
             # TODO: do the same but in chunks
-            data = _numpy_24bit_to_32bit(np.fromfile(fid, dtype=np.ubyte, count=size), bigendian=False)
+            data = _numpy_24bit_to_32bit(np.fromfile(fid, dtype=np.ubyte, count=size), 
+                                         bigendian=False)
             if channels > 1:
                 data = data.reshape(-1, channels)
     return data
@@ -832,13 +849,12 @@ def _wav_read(path:str, convert_to_float:bool=True) -> Tuple[Sample, SndInfo]:
     return Sample(data, info.samplerate), info
 
 
-def _wav_read_chunked(path:str, frames:int=100, convert_to_float:bool=True) -> Iterator[np.ndarray]:
+def _wav_read_chunked(path:str, frames:int=100, convert_to_float:bool=True
+                      ) -> Iterator[np.ndarray]:
     f = open(path, 'rb')
     info, fsize, big_endian, datasize = _wav_getinfo(f)
     if info.encoding == 'flt32':
         raise NotImplementedError("float32 is not correctly implemented")
-    # asbytes = str
-    # fmt = ">i" if big_endian else "<i"
     bits = int(info.encoding[3:])
     bytes = bits // 8
     chunksize = bytes * info.channels * frames
@@ -878,21 +894,21 @@ def _wav_getinfo(f:Union[IO, str]) -> Tuple[SndInfo, int, bool, int]:
     while (f.tell() < fsize):
         chunk_id = f.read(4)
         if chunk_id == 'fmt ':
-            chunksize, sampleformat, channels, samplerate, byterate, block_align, bits = _wav_read_fmt_chunk(f, big_endian)
+            chunksize, samplefmt, chans, sr, byterate, align, bits = _wav_read_fmt_chunk(f, big_endian)
         elif chunk_id == 'data':
             datasize = _struct.unpack(fmt, f.read(4))[0]
             # size = numsamples * NumChannels * BitsPerSample/8
-            nframes = int(datasize / (channels * (bits / 8)))
+            nframes = int(datasize / (chans * (bits / 8)))
             break
         else:
             _warnings.warn("chunk not understood: %s" % chunk_id)
             data = f.read(4)
             size = _struct.unpack(fmt, data)[0]
             f.seek(size, 1)
-    encoding = _encoding(sampleformat, bits)
+    encoding = _encoding(samplefmt, bits)
     if needsclosing:
         f.close()
-    info = SndInfo(samplerate, nframes, channels, encoding, "wav")
+    info = SndInfo(sr, nframes, chans, encoding, "wav")
     return info, fsize, big_endian, datasize
     
 
@@ -964,8 +980,6 @@ def _available_backends():
 
 def _get_backend(path=None, key=None):
     """
-    ext: a string like .aiff. If given, only backends supporting 
-         the given filetype are returned
     key: a function (backend -> bool) signaling if the backend 
          is suitable for a specific task
 
@@ -975,18 +989,14 @@ def _get_backend(path=None, key=None):
     # Get available backends which can read in chunks
     >>> backend = _get_backend('file.flac', key=lambda backend:backend.can_read_in_chunks)
     """
-    if path:
-        ext = _os.path.splitext(path)[1].lower()
-    else:
-        ext = None
+    ext = _os.path.splitext(path)[1].lower() if path else None
     backends = _available_backends()
     if key:
         backends = [b for b in backends if key(b)]
     if ext:
-        backends = [backend for backend in backends if ext in backend.supported_filetypes]
+        backends = [b for b in backends if ext in b.filetypes]
     if backends:
-        best = sorted(backends, key=lambda backend: backend.priority)[0]
-        return best
+        return min(backends, key=lambda backend: backend.priority)
     return None
 
 
@@ -996,10 +1006,9 @@ def _get_write_backend(outfile:str, encoding:str):
         raise SndfileError("No available backends for writing")
     ext = _os.path.splitext(outfile)[1].lower()
     if ext:
-        backends = [b for b in backends if ext in b.supported_filetypes_write]
+        backends = [b for b in backends if ext in b.filetypes_write]
     if backends:
-        best = sorted(backends, key=lambda backend: backend.priority)[0]
-        return best
+        return min(backends, key=lambda backend: backend.priority)
     return None
 
 
@@ -1026,14 +1035,17 @@ def _guess_encoding(data:np.ndarray, outfile:str) -> str:
             32: 'pcm24'
         }.get(maxbits, 'pcm24')
     else:
-        raise FormatNotSupported("The requested format ({0}) is not supported".format(ext))
+        raise FormatNotSupported(f"The format {ext} is not supported")
     assert encoding in ('pcm16', 'pcm24', 'flt32')
     return encoding
 
 
-def _compare_read(path:str) -> Tuple[np.ndarray, np.ndarray]:
-    s0 = _Audiolab.read(path)
-    s1 = _Builtin.read(path)
+def _compare_read(path:str, backend='scikits.audiolab') -> Tuple[np.ndarray, np.ndarray]:
+    backends = _available_backends()
+    backend1 = next(b for b in backends if b.name == backend)
+    backend2 = next(b for b in backends if b.name == 'builtin')
+    s0 = backend1.read(path)
+    s1 = backend2.read(path)
     return s0, s1
 
 
