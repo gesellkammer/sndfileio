@@ -232,7 +232,7 @@ def resample(samples, oldsr, newsr):
     oldsr  : original samplerate
     newsr  : new sample rate
 
-    Returns --> the new samples
+    Returns: the new samples
     """
     backends = [
         _resample_samplerate,   # turns the samples into float32, which is ok for audio 

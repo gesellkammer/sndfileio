@@ -43,11 +43,20 @@ sndwrite_chunked
 
 * allows you to write to the file as samples become available
 
+resample
+--------
+
+Resample a numpy array to a new samplerate
+
 Dependencies
 ============
 
 :Mandatory: 
-    * numpy
-    
-:Optional:   
-    * scikits.audiolab
+   * numpy
+   * scipy
+
+:Optional Backends:   
+   * scikits.audiolab
+   * PySndfile: https://pypi.python.org/pypi/pysndfile
+   * python-samplerate: https://github.com/tuxu/python-samplerate
+   
