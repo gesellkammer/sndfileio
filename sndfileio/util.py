@@ -18,6 +18,7 @@ def numchannels(samples:np.ndarray) -> int:
     else:
         return samples.shape[1]
 
+
 def apply_multichannel(data:np.ndarray, func:Callable[[np.ndarray], np.ndarray]) -> np.ndarray:
     ch = numchannels(data)
     if ch == 1:
@@ -29,3 +30,6 @@ def apply_multichannel(data:np.ndarray, func:Callable[[np.ndarray], np.ndarray])
         out = np.concatenate(chans)
         out.shape = (ch, len(data))
         return out.T
+
+
+del Callable

@@ -11,7 +11,6 @@ and more formats are supported
 
 """
 from .sndfileio import *
-from .sndfileio import _compare_read
 from .resampling import resample
 
 del resampling

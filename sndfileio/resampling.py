@@ -1,6 +1,5 @@
 from __future__ import division
 import scipy.signal as sig
-import warnings
 import numpy as np
 from .dsp import lowpass_cheby2
 from typing import List, Optional as Opt, Callable
@@ -15,10 +14,10 @@ except ImportError:
 logger = logging.getLogger("sndfileio")
 
 
-def _apply_by_channel(samples, func):
+def _applyMultichan(samples, func):
     # type: (np.ndarray, Callable[[np.ndarray], np.ndarray]) -> np.ndarray
     """
-    apply func to each channel of audio data in samples
+    Apply func to each channel of audio data in samples
     """
     if len(samples.shape) == 1 or samples.shape[1] == 1:
         newsamples = func(samples)
@@ -33,33 +32,30 @@ def _apply_by_channel(samples, func):
 def _resample_scipy(samples, sr, newsr, window='hanning'):  
     # type: (np.ndarray, int, int, str) -> np.ndarray
     try:
-        import scipy.signal
+        from scipy.signal import resample
     except ImportError:
         return None
 
     ratio = newsr/sr
-    num_new_samples = int(ratio * len(samples) + 0.5)
+    lenNewSamples = int(ratio * len(samples) + 0.5)
 
-    return _apply_by_channel(
-        samples, 
-        lambda samples: scipy.signal.resample(samples, num_new_samples, window=window)
-    )
+    return _applyMultichan(samples, 
+                           lambda S: resample(S, lenNewSamples, window=window))
 
 
 def _resample_samplerate(samples, sr, newsr):
+    # type: (np.ndarray, int, int, str) -> np.ndarray
     """
     Uses https://github.com/tuxu/python-samplerate
     """
     try:
-        import samplerate
+        from samplerate import resample
     except ImportError:
         return None
 
     ratio = newsr/sr
-    return _apply_by_channel(
-        samples,
-        lambda samples: samplerate.resample(samples, ratio, 'sinc_best')
-    )
+    return _applyMultichan(samples,
+                           lambda S: resample(S, ratio, 'sinc_best'))
 
 #######################################################
 
@@ -127,15 +123,14 @@ def _nnresample_compute_filt(up, down, beta=5.0, L=32001):
     
 
 def _resample_nnresample(samples, sr, newsr):
-    return _apply_by_channel(
-        samples,
-        lambda s: _resample_nnresample2(s, newsr, sr)[:-1]
-    )
-    # return _resample_nnresample2(samples, newsr, sr)
+    # type: (np.ndarray, int, int, str) -> np.ndarray
+    return _applyMultichan(samples,
+                           lambda S: _resample_nnresample2(S, newsr, sr)[:-1])
 
 
 def _resample_nnresample2(s, up, down, beta=5.0, L=16001, axis=0):
-    r"""
+    # type: (np.ndarray, float, float, float, int, int) -> np.ndarray
+    """
     Taken from https://github.com/jthiem/nnresample
 
     Resample a signal from rate "down" to rate "up"
@@ -184,15 +179,13 @@ def _resample_nnresample2(s, up, down, beta=5.0, L=16001, axis=0):
 def _resample_scikits(samples, sr, newsr):
     # type: (np.ndarray, int, int) -> np.ndarray
     try:
-        import scikits.samplerate
+        from scikits.samplerate import resample
     except ImportError:
         return None
     
     ratio = newsr / sr
-    return _apply_by_channel(
-        samples,
-        lambda samples: scikits.samplerate.resample(samples, ratio, 'sinc_best')
-    )
+    return _applyMultichan(samples,
+                           lambda S: resample(S, ratio, 'sinc_best'))
 
 
 def _resample_obspy(samples, sr, newsr, window='hanning', lowpass=True):
@@ -202,25 +195,22 @@ def _resample_obspy(samples, sr, newsr, window='hanning', lowpass=True):
     low-pass filtering for upsampling
 
     """
-    import scipy.signal
+    from scipy.signal import resample
     from math import ceil
     factor = sr/float(newsr)
     if newsr < sr and lowpass:
         # be sure filter still behaves good
         if factor > 16:
-            msg = "Automatic filter design is unstable for resampling " + \
-                  "factors (current sampling rate/new sampling rate) " + \
-                  "above 16. Manual resampling is necessary."
-            warnings.warn(msg)
+            logger.info("Automatic filter design is unstable for resampling "
+                        "factors (current sampling rate/new sampling rate) " 
+                        "above 16. Manual resampling is necessary.")
         freq = min(sr, newsr) * 0.5 / float(factor)
         logger.debug(f"resample_obspy: lowpass {freq}")
         samples = lowpass_cheby2(samples, freq=freq, sr=sr, maxorder=12)
     num = int(ceil(len(samples) / factor))
 
-    return _apply_by_channel(
-        samples, 
-        lambda samples: scipy.signal.resample(samples, num, window=window)
-    )
+    return _applyMultichan(samples, 
+                           lambda S: resample(S, num, window=window))
 
 
 def resample(samples, oldsr, newsr):
@@ -237,7 +227,7 @@ def resample(samples, oldsr, newsr):
     backends = [
         _resample_samplerate,   # turns the samples into float32, which is ok for audio 
         _resample_scikits,
-        _resample_nnresample,   # very good results, pure python, follows libsamplerate very closely
+        _resample_nnresample,   # very good results, follows libsamplerate closely
         _resample_obspy,        # these last two introduce some error at the first samples
         _resample_scipy
     ]  # type: List[Callable[[np.ndarray, int, int], Opt[np.ndarray]]]

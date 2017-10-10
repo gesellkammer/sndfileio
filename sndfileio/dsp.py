@@ -103,9 +103,7 @@ def filter_butter(samples, samplerate, filtertype, freq, order=5):
     """
     assert filtertype in ('low', 'high', 'band')
     b, a = filter_butter_coeffs(filtertype, freq, samplerate, order=order)
-    def func(data):
-        return signal.lfilter(b, a, data)
-    return apply_multichannel(samples, func)
+    return apply_multichannel(samples, lambda data:signal.lfilter(b, a, data))
     
 
 def filter_butter_plot_freqresponse(b, a, samplerate, numpoints=2000):
