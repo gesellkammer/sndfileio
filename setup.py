@@ -2,7 +2,7 @@ from __future__ import print_function
 from setuptools import setup
 import sys
 
-version = "0.8.0"
+version = "0.8.1"
 
 print(version)
 
@@ -14,6 +14,7 @@ description = \
 * Bitdepth is handled automatically depending on the the actual data  
 """
 
+short_description = "Common API for reading writing soundfiles"
 
 if sys.version_info < (3,6):
     sys.exit('Sorry, Python < 3.6 is not supported')
@@ -21,10 +22,10 @@ if sys.version_info < (3,6):
 setup(
     name         = "sndfileio",
     version      = version,
-    description  = description,
+    description  = short_description,
     summary      = "Simple API for reading and writing soundfiles", 
     author       = "Eduardo Moguillansky",
-    author_email = "eduardo moguillansky dot gmail dot com",
+    author_email = "eduardo.moguillansky@gmail.com",
     url          = "https://github.com/gesellkammer/sndfileio",
     packages     = [ "sndfileio"],
     package_data = {'': ['README.md']},
