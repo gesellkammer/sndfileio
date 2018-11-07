@@ -23,7 +23,7 @@ Even without third-party packages, it has certain advantages over the built-in m
 
 ### sndinfo
 
-* return `SndInfo`, a namedtuple with all the information of the sound-file
+* returns `SndInfo`, a namedtuple with all the information of the sound-file
 
 ### sndwrite
 
@@ -47,7 +47,12 @@ Resample a numpy array to a new samplerate
 
 ### Optional Backends
    
-   * scikits.audiolab
-   * PySndfile: https://pypi.python.org/pypi/pysndfile
-   * python-samplerate: https://github.com/tuxu/python-samplerate
-   
+    * PySndfile: https://pypi.python.org/pypi/pysndfile
+        * extends support to many formats, like .flac, .ogg, etc.
+        * needs the sndfile library (`apt install libsndfile1-dev`)
+    * python-samplerate: https://github.com/tuxu/python-samplerate
+    * ~~scikits.audiolab~~s
+
+## License
+
+See the [LICENSE](LICENSE.md) file for license rights and limitations (MIT).
