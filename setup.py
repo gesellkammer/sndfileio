@@ -2,7 +2,7 @@ from __future__ import print_function
 from setuptools import setup
 import sys
 
-version = "0.8.2"
+version = "0.9.0"
 
 print(version)
 
