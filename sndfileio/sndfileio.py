@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 SNDFILE.IO
 
@@ -47,13 +48,14 @@ sndwrite_chunked(path) --> opens the file for writing.
                            To write to the file, call .write
 """
 import os as _os
-from collections import namedtuple as _namedtuple
 import struct as _struct
 import warnings as _warnings
 import numpy as np
 import importlib
-from .util import numchannels
 import logging
+
+from .util import numchannels
+from .datastructs import SndInfo
 from typing import (
     Tuple, Union, Any, Iterator, Optional as Opt, 
     List, cast, IO, NamedTuple, Dict
@@ -87,45 +89,6 @@ class FormatNotSupported(Exception):
 
 def _isPackageInstalled(pkg):
     return importlib.util.find_spec(pkg) is not None
-
-
-########################
-#
-# SndInfo
-#
-########################
-
-
-class SndInfo:
-
-    def __init__(self, samplerate:int, nframes:int, channels:int, 
-                 encoding:str, fileformat:str
-                 ) -> None:
-        self.samplerate = samplerate 
-        self.nframes = nframes
-        self.channels = channels
-        self.encoding = encoding
-        self.fileformat = fileformat
-
-    @property
-    def duration(self) -> float:
-        return self.nframes / self.samplerate
-
-    def __repr__(self):
-        return """------------------
-samplerate : %d
-nframes    : %d
-channels   : %d
-encoding   : %s
-fileformat : %s
-duration   : %.3f s""" % (
-            self.samplerate,
-            self.nframes,
-            self.channels,
-            self.encoding,
-            self.fileformat,
-            self.duration
-        )
 
 
 class SndfileError(IOError):
@@ -221,6 +184,9 @@ def sndinfo(path:str) -> SndInfo:
     RETURNS --> an instance of SndInfo: samplerate, nframes, channels, encoding, fileformat
     """
     backend = _getBackend(path)
+    if not backend:
+        logger.warn("sndinfo: no backend supports this filetype")
+        return None
     logger.debug(f"sndinfo: using backend {backend.name}")
     return backend.getinfo(path)
 
@@ -417,11 +383,15 @@ class _Backend:
         self.filetypes = filetypes
         self.filetypes_write = filetypes_write
         self.encodings = encodings
-        self.can_write_chunked = can_read_chunked
+        self.can_read_chunked = can_read_chunked
         self.can_write_chunked = can_write_chunked
         self.name = name
         self._backend = None
         self._writer = None
+
+    def read(self):
+        pass
+
 
     @staticmethod
     def _getBackend():
@@ -450,6 +420,19 @@ class _Backend:
                 "The given format (%s) is not supported by the %s backend" %
                 (ext, self.name)
             )
+
+    def dump(self):
+        print(f"Backend: {self.name} (available: {self.is_available}, priority: {self.priority})")
+        if self.readtypes:
+            readtypes = ", ".join(self.filetypes)
+            print(f"    read types : {readtypes}")
+        if self.filetypes_write:
+            writetypes = ", ".join(self.filetypes_write)
+            print(f"    write types: {writetypes}")
+        ok, notok = "OK", "--"
+        readchunked  = ok if self.can_read_chunked else notok
+        writechunked = ok if self.can_write_chunked else notok
+        print(f"    sndread_chunked: {readchunked}    sndwrite_chunked: {writechunked}")
 
 
 class _PySndfile(_Backend):
@@ -651,17 +634,46 @@ class _Builtin(_Backend):
             raise NotImplementedError("read_chunked not implemented")
 
 
+class _PyDub(_Backend):
+    def __init__(self, priority):
+        super().__init__(
+            priority=priority,
+            filetypes = ('.mp3'),
+            filetypes_write = [],
+            encodings = ('pcm16',),
+            can_read_chunked = False,
+            can_write_chunked = False,
+            name = 'pydub'
+        )
+
+    def is_available(self):
+        return _isPackageInstalled("pydub")
+
+    def getinfo(self, path:str) -> SndInfo:
+        ext = _os.path.splitext(path)[1].lower()
+        if ext == '.mp3':
+            from . import mp3
+            return mp3.mp3info(path)
+
+    def read(self, path:str) -> np.ndarray:
+        ext = _os.path.splitext(path)[1].lower()
+        if ext == '.mp3':
+            from . import mp3
+            return mp3.mp3read(path)
+        else:
+            raise ValueError("format not supported by this backend")
+
 BACKENDS = [
     _PySndfile(priority=0), 
+    _PyDub(priority=10),
     _Builtin(priority=100), 
-    # _Audiolab(priority=1)
 ]  # type: List[_Backend]
 
 
 def report_backends():
     for b in BACKENDS:
         if b.is_available():
-            print(f"Backend {b.name} available. Priority: {b.priority}")
+            b.dump()
         else:
             print(f"Backend {b.name} NOT available")            
     
@@ -971,7 +983,7 @@ def _getBackend(path=None, key=None):
     =======
 
     # Get available backends which can read in chunks
-    >>> backend = _getBackend('file.flac', key=lambda backend:backend.can_read_chunked)
+    >>> backend = _getBackend('file.flac', key=lambda backend:backend.can_read_chunked())
     """
     ext = _os.path.splitext(path)[1].lower() if path else None
     backends = _getBackends()
