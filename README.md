@@ -56,13 +56,20 @@ Resample a numpy array to a new samplerate
     * `pip install pysndfile`
     * extends support to many formats, like .flac, .ogg, etc.
     * needs the sndfile library (`apt install libsndfile1-dev`)
+
 * `python-samplerate`
     * https://github.com/tuxu/python-samplerate
     * Provides efficient and high quality resampling
+
+* `miniaudio`
+	* https://github.com/irmen/pyminiaudio
+	* Provides support for .mp3 through a c extension, very efficient
+
 * `pydub`
     * https://github.com/jiaaro/pydub (`pip install pydub`)
     * Adds support for mp3
     * Depends on `ffmpeg` or `libav` being installed (`apt install ffmpeg`)
+    * Not as efficient as miniaudio, depends on external binary being installed
 
 ## License
 

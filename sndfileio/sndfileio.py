@@ -55,7 +55,7 @@ import importlib
 import logging
 
 from .util import numchannels
-from .datastructs import SndInfo
+from .datastructs import SndInfo, Sample
 from typing import (
     Tuple, Union, Any, Iterator, Optional as Opt, 
     List, cast, IO, NamedTuple, Dict
@@ -77,10 +77,6 @@ __all__ = [
     "getchannel"
 ]
 
-
-class Sample(NamedTuple):
-    samples: np.ndarray
-    sr: int
 
 
 class FormatNotSupported(Exception):
@@ -251,6 +247,16 @@ def sndwrite_chunked(sr: int, outfile: str, encoding: str) -> _SndWriter:
                  - 'pcm24'
                  - 'pcm32'
                  - 'flt32'
+
+    Example
+    ~~~~~~~
+
+    with sndwrite_chunked(44100, "out.flac", "pcm24") as writer:
+        for buf in sndread_chunked("in.flac"):
+            # do some processing, like changing the gain
+            buf *= 0.5
+            writer.write(buf)
+
     """
     backends = [backend for backend in _getBackends() if backend.can_write_chunked]
     if not backends:
@@ -350,7 +356,7 @@ def sndwrite_chunked_like(likefile:str, outfile:str) -> _SndWriter:
 
 
 class _PySndfileWriter(_SndWriter):
-
+    
     def _openFile(self, channels:int) -> None:
         major = _os.path.splitext(self.outfile)[1]
         if major not in self.filetypes:
@@ -391,7 +397,6 @@ class _Backend:
 
     def read(self):
         pass
-
 
     @staticmethod
     def _getBackend():
@@ -625,8 +630,7 @@ class _Builtin(_Backend):
         else:
             raise ValueError("Only sndfiles with ext. aif, aiff or wav are supported")
 
-    def read_chunked(self, path:str, chunksize:int=_CHUNKSIZE
-                     ) -> Iterator[np.ndarray]:
+    def read_chunked(self, path:str, chunksize:int=_CHUNKSIZE) -> Iterator[np.ndarray]:
         ext = _os.path.splitext(path)[1].lower()
         if ext == '.wav':
             return _WavReader(path).read_chunked(chunksize)
@@ -663,9 +667,40 @@ class _PyDub(_Backend):
         else:
             raise ValueError("format not supported by this backend")
 
+
+class _Miniaudio(_Backend):
+
+    def __init__(self, priority):
+        super().__init__(
+            priority=priority,
+            filetypes= ['.mp3'],
+            filetypes_write = [],
+            can_read_chunked = False,
+            can_write_chunked = False,
+            encodings = ['pcm16'],
+            name = 'miniaudio'
+        )
+
+    def is_available(self):
+        return _isPackageInstalled("miniaudio")
+
+    def getinfo(self, path:str) -> SndInfo:
+        ext = _os.path.splitext(path)[1].lower()
+        if ext == '.mp3':
+            from . import backend_miniaudio
+            return backend_miniaudio.mp3info(path)
+
+    def read(self, path: str) -> np.ndarray:
+        ext = _os.path.splitext(path)[1].lower()
+        if ext == '.mp3':
+            from . import backend_miniaudio
+            return backend_miniaudio.mp3read(path)
+
+
 BACKENDS = [
-    _PySndfile(priority=0), 
-    _PyDub(priority=10),
+    _PySndfile(priority=0),
+    _Miniaudio(priority=8), 
+    # _PyDub(priority=10),
     _Builtin(priority=100), 
 ]  # type: List[_Backend]
 
@@ -1034,9 +1069,6 @@ def _guessEncoding(data:np.ndarray, outfile:str) -> str:
         raise FormatNotSupported(f"The format {ext} is not supported")
     assert encoding in ('pcm16', 'pcm24', 'flt32')
     return encoding
-
-
-
 
 
 del Tuple, Union, Any, Iterator, Opt, List, cast, IO, NamedTuple

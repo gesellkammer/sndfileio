@@ -8,7 +8,7 @@ print(version)
 
 description = \
 """Common API for reading and writing soundfiles.   
-* Uses installed packages if found (recommended: pysndfile)  
+* Uses installed packages if found (recommended: pysndfile, miniaudio)  
 * Implements reading uncompressed formats correctly in any format.  
 * The data is independent of the encoding. All data is presented as float64  
 * Bitdepth is handled automatically depending on the the actual data  
@@ -36,7 +36,7 @@ setup(
     url          = "https://github.com/gesellkammer/sndfileio",
     
     classifiers = [
-        "Programming Language :: Python :: 3.6"
+        "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7"
     ]
 )

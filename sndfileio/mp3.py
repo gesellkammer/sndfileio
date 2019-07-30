@@ -30,4 +30,6 @@ def mp3read(path:str):
     f = _audiosegment(path)
     samples = f.get_array_of_samples()
     samplesnp = np.frombuffer(samples, np.int16, len(samples)) / (2**15)
+    if f.channels > 1:
+        samplesnp.shape = (int(f.frame_count()), f.channels)
     return samplesnp, f.frame_rate

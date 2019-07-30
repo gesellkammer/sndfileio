@@ -1,3 +1,10 @@
+from typing import NamedTuple
+import numpy as np
+
+
+class Sample(NamedTuple):
+    samples: np.ndarray
+    sr: int
 
 
 class SndInfo:
