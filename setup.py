@@ -22,7 +22,11 @@ if sys.version_info < (3,6):
 setup(
     name = "sndfileio",
     python_requires = ">=3.6",
-    install_requires = ["numpy>1.8", "scipy"],
+    install_requires = [
+        "numpy>1.8", 
+        "scipy",
+        "pysndfile",
+        "miniaudio"],
     packages = ["sndfileio"],
     package_data = {'': ['README.md']},
     include_package_data = True,
