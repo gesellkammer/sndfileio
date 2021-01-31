@@ -4,18 +4,17 @@ import numpy as np
 from .dsp import lowpass_cheby2
 from typing import List, Optional as Opt, Callable
 import logging
+from math import gcd
 
-try:
-    from math import gcd
-except ImportError:
-    from fractions import gcd
+
+class BackendNotAvailable(Exception):
+    pass
 
 
 logger = logging.getLogger("sndfileio")
 
-
-def _applyMultichan(samples, func):
-    # type: (np.ndarray, Callable[[np.ndarray], np.ndarray]) -> np.ndarray
+def _applyMultichan(samples: np.ndarray,
+                    func: Callable[[np.ndarray], np.ndarray]) -> np.ndarray:
     """
     Apply func to each channel of audio data in samples
     """
@@ -29,12 +28,12 @@ def _applyMultichan(samples, func):
     return newsamples    
     
 
-def _resample_scipy(samples, sr, newsr, window='hanning'):  
-    # type: (np.ndarray, int, int, str) -> np.ndarray
+def _resample_scipy(samples: np.ndarray, sr:int, newsr:int, window='hanning'
+                    ) -> np.ndarray:
     try:
         from scipy.signal import resample
     except ImportError:
-        return None
+        raise BackendNotAvailable()
 
     ratio = newsr/sr
     lenNewSamples = int(ratio * len(samples) + 0.5)
@@ -43,15 +42,14 @@ def _resample_scipy(samples, sr, newsr, window='hanning'):
                            lambda S: resample(S, lenNewSamples, window=window))
 
 
-def _resample_samplerate(samples, sr, newsr):
-    # type: (np.ndarray, int, int, str) -> np.ndarray
+def _resample_samplerate(samples:np.ndarray, sr:int, newsr:int) -> np.ndarray:
     """
     Uses https://github.com/tuxu/python-samplerate
     """
     try:
         from samplerate import resample
     except ImportError:
-        return None
+        raise BackendNotAvailable()
 
     ratio = newsr/sr
     return _applyMultichan(samples,
@@ -120,50 +118,49 @@ def _nnresample_compute_filt(up, down, beta=5.0, L=32001):
     
     # generate the proper shifted filter
     return sig.fir_filter_design.firwin(L, -firstnull+2/max_rate, window=('kaiser', beta))
-    
 
-def _resample_nnresample(samples, sr, newsr):
-    # type: (np.ndarray, int, int, str) -> np.ndarray
+
+def _resample_nnresample(samples: np.ndarray, sr:int, newsr:int) -> np.ndarray:
     return _applyMultichan(samples,
                            lambda S: _resample_nnresample2(S, newsr, sr)[:-1])
 
 
-def _resample_nnresample2(s, up, down, beta=5.0, L=16001, axis=0):
-    # type: (np.ndarray, float, float, float, int, int) -> np.ndarray
+def _resample_nnresample_package(samples: np.ndarray, sr:int, newsr:int) -> np.ndarray:
+    return _applyMultichan(samples,
+                           lambda S: _resample_nnresample_package_mono(S, newsr, sr)[:-1])
+
+
+def _resample_nnresample_package_mono(s:np.ndarray, up:int, down:int, **kws) -> np.ndarray:
+    import nnresample
+    return nnresample.resample(s, up, down, axis=0, fc='nn', **kws)
+
+
+def _resample_nnresample2(s:np.ndarray, up:int, down:int, beta=5.0, L=16001, axis=0
+                          ) -> np.ndarray:
     """
     Taken from https://github.com/jthiem/nnresample
 
     Resample a signal from rate "down" to rate "up"
-    
-    Parameters
-    ----------
-    x : array_like
-        The data to be resampled.
-    up : int
-        The upsampling factor.
-    down : int
-        The downsampling factor.
-    beta : float
-        Beta factor for Kaiser window.  Determines tradeoff between
-        stopband attenuation and transition band width
-    L : int
-        FIR filter order.  Determines stopband attenuation.  The higher
-        the better, ath the cost of complexity.
-    axis : int, optional
-        The axis of `x` that is resampled. Default is 0.
+
+    Args:
+        s (array): The data to be resampled.
+        up (int): The upsampling factor.
+        down (int): The downsampling factor.
+        beta (float): Beta factor for Kaiser window. Determines tradeoff between
+            stopband attenuation and transition band width
+        L (int): FIR filter order.  Determines stopband attenuation.  The higher
+            the better, ath the cost of complexity.
+        axis (int): int, optional. The axis of `s` that is resampled. Default is 0.
         
-    Returns
-    -------
-    resampled_x : array
+    Returns:
         The resampled array.
-        
-    Notes
-    -----
-    The function keeps a global cache of filters, since they are
-    determined entirely by up, down, beta, and L.  If a filter
-    has previously been used it is looked up instead of being
-    recomputed.
-    """       
+
+    .. notes::
+        The function keeps a global cache of filters, since they are
+        determined entirely by up, down, beta, and L.  If a filter
+        has previously been used it is looked up instead of being
+        recomputed.
+    """
     # check if a resampling filter with the chosen parameters already exists
     params = (up, down, beta, L)
     if params in _precomputed_filters.keys():
@@ -176,24 +173,11 @@ def _resample_nnresample2(s, up, down, beta=5.0, L=16001, axis=0):
     return sig.resample_poly(s, up, down, window=np.array(filt), axis=axis)
 
 
-def _resample_scikits(samples, sr, newsr):
-    # type: (np.ndarray, int, int) -> np.ndarray
-    try:
-        from scikits.samplerate import resample
-    except ImportError:
-        return None
-    
-    ratio = newsr / sr
-    return _applyMultichan(samples,
-                           lambda S: resample(S, ratio, 'sinc_best'))
-
-
-def _resample_obspy(samples, sr, newsr, window='hanning', lowpass=True):
-    # type: (np.ndarray, int, int, str, bool) -> np.ndarray
+def _resample_obspy(samples:np.ndarray, sr:int, newsr:int, window='hanning', lowpass=True
+                    ) -> np.ndarray:
     """
     Resample using Fourier method. The same as resample_scipy but with
     low-pass filtering for upsampling
-
     """
     from scipy.signal import resample
     from math import ceil
@@ -213,26 +197,28 @@ def _resample_obspy(samples, sr, newsr, window='hanning', lowpass=True):
                            lambda S: resample(S, num, window=window))
 
 
-def resample(samples, oldsr, newsr):
-    # type: (np.ndarray, int, int) -> np.ndarray
+def resample(samples: np.ndarray, oldsr:int, newsr:int) -> np.ndarray:
     """
     Resample `samples` with given samplerate `sr` to new samplerate `newsr`
 
-    samples: mono or multichannel frames
-    oldsr  : original samplerate
-    newsr  : new sample rate
+    Args:
+        samples: mono or multichannel frames
+        oldsr: original samplerate
+        newsr: new sample rate
 
-    Returns: the new samples
+    Returns:
+        the new samples
     """
     backends = [
-        _resample_samplerate,   # turns the samples into float32, which is ok for audio 
-        _resample_scikits,
-        _resample_nnresample,   # very good results, follows libsamplerate closely
+        _resample_samplerate,   # turns the samples into float32, which is ok for audio
+        _resample_nnresample_package,  # nnresample packaged version
+        _resample_nnresample,   # (builtin) very good results, follows libsamplerate closely
         _resample_obspy,        # these last two introduce some error at the first samples
         _resample_scipy
-    ]  # type: List[Callable[[np.ndarray, int, int], Opt[np.ndarray]]]
+    ]
 
     for backend in backends:
-        newsamples = backend(samples, oldsr, newsr)
-        if newsamples is not None:
-            return newsamples
+        try:
+            return backend(samples, oldsr, newsr)
+        except BackendNotAvailable:
+            pass

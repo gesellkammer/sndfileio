@@ -1,3 +1,4 @@
+from __future__ import annotations
 from scipy import signal
 import numpy as np
 import warnings
@@ -5,8 +6,7 @@ from typing import Tuple, Sequence as Seq, Union
 from .util import apply_multichannel
 
 
-def lowpass_cheby2(samples, freq, sr, maxorder=12):
-    # type: (np.ndarray, float, int, int) -> np.ndarray
+def lowpass_cheby2(samples:np.ndarray, freq:float, sr:int, maxorder=12) -> np.ndarray:
     """
     Cheby2-Lowpass Filter
 
@@ -17,11 +17,15 @@ def lowpass_cheby2(samples, freq, sr, maxorder=12):
     band frequency is determined dynamically, such that the
     values above the stop band frequency are lower than -96dB.
 
-    samples : Data to filter, type numpy.ndarray.
-    freq    : The frequency above which signals are attenuated
-              with 95 dB
-    sr      : Sampling rate in Hz.
-    maxorder: Maximal order of the designed cheby2 filter
+    Args:
+        samples : Data to filter, type numpy.ndarray.
+        freq    : The frequency above which signals are attenuated
+                  with 95 dB
+        sr      : Sampling rate in Hz.
+        maxorder: Maximal order of the designed cheby2 filter
+
+    Returns:
+        the filtered array
     """
     if freq > sr*0.5:
         raise ValueError("Can't filter freq. above nyquist")
@@ -29,15 +33,18 @@ def lowpass_cheby2(samples, freq, sr, maxorder=12):
     return signal.lfilter(b, a, samples)
 
 
-def lowpass_cheby2_coeffs(freq, sr, maxorder=12):
-    # type: (float, int, int) -> Tuple[np.ndarray, np.ndarray, float]
+def lowpass_cheby2_coeffs(freq:float, sr:int, maxorder=12
+                          ) -> Tuple[np.ndarray, np.ndarray, float]:
     """
-    freq    : The frequency above which signals are attenuated
-              with 95 dB
-    sr      : Sampling rate in Hz.
-    maxorder: Maximal order of the designed cheby2 filter
+    Args:
 
-    Returns --> (b coeffs, a coeffs, freq_passband)
+        freq    : The frequency above which signals are attenuated
+                  with 95 dB
+        sr      : Sampling rate in Hz.
+        maxorder: Maximal order of the designed cheby2 filter
+
+    Returns:
+         a tuple (b coeffs, a coeffs, freq_passband)
     """
     
     nyquist = sr * 0.5
@@ -60,16 +67,19 @@ def lowpass_cheby2_coeffs(freq, sr, maxorder=12):
     return b, a, wp*nyquist
 
 
-def filter_butter_coeffs(filtertype, freq, samplerate, order=5):
-    # type: (str, Union[float, Tuple[float, float]], int, int) -> Tuple[np.ndarray, np.ndarray]
+def filter_butter_coeffs(filtertype:str,
+                         freq: Union[float, Tuple[float, float]],
+                         samplerate:int, order=5
+                         ) -> Tuple[np.ndarray, np.ndarray]:
     """
     calculates the coefficients for a digital butterworth filter
 
-    filtertype: 'low', 'high', 'band'
-    freq      : cutoff freq.
-                in the case of 'band': (low, high)
+    Args:
+        filtertype: 'low', 'high', 'band'
+        freq: cutoff freq. In the case of 'band': (low, high)
 
-    Returns --> (b, a)
+    Returns:
+         a tuple (b, a)
     """
     assert filtertype in ('low', 'high', 'band')
     nyq = 0.5 * samplerate
@@ -85,38 +95,43 @@ def filter_butter_coeffs(filtertype, freq, samplerate, order=5):
     return b, a
 
 
-def filter_butter(samples, samplerate, filtertype, freq, order=5):
-    # type: (np.ndarray, int, str, float, int) -> np.ndarray
+def filter_butter(samples: np.ndarray, samplerate:int, filtertype:str, freq:float, order=5
+                  ) -> np.ndarray:
     """
     Filters the samples with a digital butterworth filter
 
-    samples   : mono samples
-    filtertype: 'low', 'band', 'high'
-    freq      : for low or high, the cutoff freq
-                for band, (low, high)
-    samplerate: the sampling-rate
-    order     : the order of the butterworth filter
+    Args:
+        samples   : mono samples
+        filtertype: 'low', 'band', 'high'
+        freq      : for low or high, the cutoff freq
+                    for band, (low, high)
+        samplerate: the sampling-rate
+        order     : the order of the butterworth filter
 
-    Returns --> the filtered samples
+    Returns:
+         the filtered samples
 
-    NB: calls filter_butter_coeffs to calculate the coefficients
+    .. note::
+        calls filter_butter_coeffs to calculate the coefficients
     """
     assert filtertype in ('low', 'high', 'band')
     b, a = filter_butter_coeffs(filtertype, freq, samplerate, order=order)
     return apply_multichannel(samples, lambda data:signal.lfilter(b, a, data))
     
 
-def filter_butter_plot_freqresponse(b, a, samplerate, numpoints=2000):
-    # type: (Seq[float], Seq[float], int, int) -> None
+def filter_butter_plot_freqresponse(b:Seq[float], a:Seq[float],
+                                    samplerate:int, numpoints=2000) -> None:
     """
     Plot the freq. response of the digital butterw. filter 
     defined by the coeffs. (b, a) at `samplerate`
 
-    Returns --> nothing
+    .. seealso:: filter_butter_coeffs
 
-    See also: filter_butter_coeffs
     """
-    import matplotlib.pyplot as plt
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        raise ImportError("matplotlib is needed for plotting")
     plt.figure(1)
     plt.clf()
     w, h = signal.freqz(b, a, worN=numpoints)
