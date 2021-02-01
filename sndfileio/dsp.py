@@ -1,3 +1,7 @@
+"""
+Helper functions for doing simple dsp filtering
+"""
+
 from __future__ import annotations
 from scipy import signal
 import numpy as np
@@ -6,7 +10,7 @@ from typing import Tuple, Sequence as Seq, Union
 from .util import apply_multichannel
 
 
-def lowpass_cheby2(samples:np.ndarray, freq:float, sr:int, maxorder=12) -> np.ndarray:
+def lowpass_cheby(samples:np.ndarray, freq:float, sr:int, maxorder=12) -> np.ndarray:
     """
     Cheby2-Lowpass Filter
 
@@ -18,10 +22,9 @@ def lowpass_cheby2(samples:np.ndarray, freq:float, sr:int, maxorder=12) -> np.nd
     values above the stop band frequency are lower than -96dB.
 
     Args:
-        samples : Data to filter, type numpy.ndarray.
-        freq    : The frequency above which signals are attenuated
-                  with 95 dB
-        sr      : Sampling rate in Hz.
+        samples: Data to filter, type numpy.ndarray.
+        freq : The frequency above which signals are attenuated with 95 dB
+        sr: Sampling rate in Hz.
         maxorder: Maximal order of the designed cheby2 filter
 
     Returns:
@@ -33,6 +36,7 @@ def lowpass_cheby2(samples:np.ndarray, freq:float, sr:int, maxorder=12) -> np.nd
     return signal.lfilter(b, a, samples)
 
 
+# noinspection PyTupleAssignmentBalance
 def lowpass_cheby2_coeffs(freq:float, sr:int, maxorder=12
                           ) -> Tuple[np.ndarray, np.ndarray, float]:
     """
@@ -62,14 +66,15 @@ def lowpass_cheby2_coeffs(freq:float, sr:int, maxorder=12
         if order <= maxorder:
             break
         wp = wp * 0.99
-        order, wn = signal.cheb2ord(wp, ws, rp, rs, analog=0)
-    b, a = signal.cheby2(order, rs, wn, btype='low', analog=0, output='ba')
+        order, wn = signal.cheb2ord(wp, ws, rp, rs, analog=False)
+    b, a = signal.cheby2(order, rs, wn, btype='low', analog=False, output='ba')
     return b, a, wp*nyquist
 
 
 def filter_butter_coeffs(filtertype:str,
                          freq: Union[float, Tuple[float, float]],
-                         samplerate:int, order=5
+                         sr:int,
+                         order=5
                          ) -> Tuple[np.ndarray, np.ndarray]:
     """
     calculates the coefficients for a digital butterworth filter
@@ -77,12 +82,15 @@ def filter_butter_coeffs(filtertype:str,
     Args:
         filtertype: 'low', 'high', 'band'
         freq: cutoff freq. In the case of 'band': (low, high)
+        sr: the sample rate of the data
+        order: the order of the filter
 
     Returns:
-         a tuple (b, a)
+         a tuple (b, a) with the corresponding coefficients
+
     """
     assert filtertype in ('low', 'high', 'band')
-    nyq = 0.5 * samplerate
+    nyq = 0.5*sr
     if isinstance(freq, tuple):
         assert filtertype == 'band'
         low, high = freq
@@ -95,18 +103,17 @@ def filter_butter_coeffs(filtertype:str,
     return b, a
 
 
-def filter_butter(samples: np.ndarray, samplerate:int, filtertype:str, freq:float, order=5
+def filter_butter(samples: np.ndarray, sr:int, filtertype:str, freq:float, order=5
                   ) -> np.ndarray:
     """
     Filters the samples with a digital butterworth filter
 
     Args:
-        samples   : mono samples
+        samples: mono samples
         filtertype: 'low', 'band', 'high'
-        freq      : for low or high, the cutoff freq
-                    for band, (low, high)
-        samplerate: the sampling-rate
-        order     : the order of the butterworth filter
+        freq : for low or high, the cutoff freq; for band, (low, high)
+        sr: the sampling-rate
+        order: the order of the butterworth filter
 
     Returns:
          the filtered samples
@@ -115,7 +122,7 @@ def filter_butter(samples: np.ndarray, samplerate:int, filtertype:str, freq:floa
         calls filter_butter_coeffs to calculate the coefficients
     """
     assert filtertype in ('low', 'high', 'band')
-    b, a = filter_butter_coeffs(filtertype, freq, samplerate, order=order)
+    b, a = filter_butter_coeffs(filtertype, freq, sr, order=order)
     return apply_multichannel(samples, lambda data:signal.lfilter(b, a, data))
     
 

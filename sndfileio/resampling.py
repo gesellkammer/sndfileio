@@ -1,7 +1,7 @@
 from __future__ import division
 import scipy.signal as sig
 import numpy as np
-from .dsp import lowpass_cheby2
+from .dsp import lowpass_cheby
 from typing import List, Optional as Opt, Callable
 import logging
 from math import gcd
@@ -190,7 +190,7 @@ def _resample_obspy(samples:np.ndarray, sr:int, newsr:int, window='hanning', low
                         "above 16. Manual resampling is necessary.")
         freq = min(sr, newsr) * 0.5 / float(factor)
         logger.debug(f"resample_obspy: lowpass {freq}")
-        samples = lowpass_cheby2(samples, freq=freq, sr=sr, maxorder=12)
+        samples = lowpass_cheby(samples, freq=freq, sr=sr, maxorder=12)
     num = int(ceil(len(samples) / factor))
 
     return _applyMultichan(samples, 

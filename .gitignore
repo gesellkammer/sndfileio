@@ -6,3 +6,4 @@ dist
 *.bak
 .*
 docs/_*
+docs/api

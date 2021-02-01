@@ -1,36 +1,4 @@
 from __future__ import annotations
-"""
-SNDFILE.IO
-
-A simple module providing a unified API to read and write sound-files to and from
-numpy arrays. If no extra modules are installed, it uses only standard modules
-and numpy to read and write uncompressed formats (WAV, AIFF).
-
-Backends
-********
-
-* PySndfile (supports wav, aif, flac, ogg, etc., https://pypi.org/project/pysndfile/)
-* miniaudio (for mp3 support, https://pypi.org/project/miniaudio/)
-
-API
-****
-
-* sndinfo(path): Returns a SndInfo, a namedtuple with all the information
-    of the sound-file
-* sndread(path): Reads ALL the samples. Returns a tuple (data, samplerate)
-* sndwrite(samples, samplerate, outfile): Write samples to outfile
-* sndwrite_like(samples, likefile, outfile): Write samples to outfile using 
-    likefile's parameters
-
-
-Chunked IO
-----------
-
-* sndread_chunked(path): returns a generator yielding chunks of frames
-* sndwrite_chunked(path): opens the file for writing. To write to the file, 
-    call .write on the returned handle
-
-"""
 import os as _os
 import numpy as np
 import importlib.util
@@ -96,7 +64,10 @@ def _chunks(start:int, end:int, step:int) -> Iterator[Tuple[int, int]]:
 ########################################
 
 class SndWriter:
-    
+    """
+    Class returned by :meth:`sndwrite_chunked` to write samples as they become available
+    (via calling its :meth:`SndWriter.write` method).
+    """
     def __init__(self, parent, sr:int, outfile:str, encoding:str) -> None:
         self.sr:int = sr
         self.outfile:str = outfile
@@ -124,6 +95,9 @@ class SndWriter:
         pass
 
     def close(self) -> None:
+        """
+        Explicitely close this file
+        """
         if self._file is not None:
             self._file.close()
         self._file = None
@@ -151,6 +125,18 @@ def sndread(path:str, start:float=0, end:float=0) -> Sample:
 
     Returns:
         a namedtuple (samples:ndarray[dtype=float], sr:int)
+
+    Example
+    ~~~~~~~
+
+    ::
+
+        # Normalize and save as flac
+        from sndfileio import sndread, sndwrite
+        samples, sr = sndread("in.wav")
+        maxvalue = max(samples.max(), -samples.min())
+        samples *= 1/maxvalue
+        sndwrite(samples, sr, "out.flac")
     """
     backend = _get_backend(path)
     if not backend:
@@ -171,6 +157,17 @@ def sndread_chunked(path:str, chunksize:int=2048, skiptime:float=0.
 
     Returns:
         a generator yielding numpy arrays (float64) of at most `chunksize` frames
+
+
+    Example
+    ~~~~~~~
+    ::
+
+        >>> with sndwrite_chunked(44100, "out.flac") as writer:
+        ...     for buf in sndread_chunked("in.flac"):
+        ...         # do some processing, like changing the gain
+        ...         buf *= 0.5
+        ...         writer.write(buf)
     """
     backend = _get_backend(path, key=lambda backend: backend.can_read_chunked)
     if backend:
@@ -183,14 +180,24 @@ def sndread_chunked(path:str, chunksize:int=2048, skiptime:float=0.
 
 def sndinfo(path:str) -> SndInfo:
     """
-    Get info about a soundfile
+    Get info about a soundfile. Returns a :class:`SndInfo`
 
     Args:
         path: the path to a soundfile
 
     Returns:
-        a SndInfo, a namedtuple with attributes (samplerate:int, nframes:int, channels:int,
+        a :class:`SndInfo` (attributes: samplerate:int, nframes:int, channels:int,
         encoding:str, fileformat:str)
+
+    Example
+    ~~~~~~~
+    ::
+
+        >>> from sndfileio import sndinfo
+        >>> info = sndinfo("sndfile.wav")
+        >>> print(f"Duration: {info.duration}s, samplerate: {info.samplerate}")
+        Duration: 0.4s, samplerate: 44100
+
     """
     backend = _get_backend(path)
     if not backend:
@@ -226,7 +233,9 @@ def sndwrite(samples:np.ndarray, sr:int, outfile:str, encoding:str='auto',
         For a bitdepth of 32 bits, a FLOAT encoding will be used,
         or the next lower supported encoding
 
-    Example::
+    Example
+    ~~~~~~~
+    ::
 
 
         # Normalize and save as flac
@@ -329,7 +338,9 @@ def getchannel(samples: np.ndarray, channel:int) -> np.ndarray:
     Returns:
         the channel specified, as a numpy array
 
-    Example::
+    Example
+    ~~~~~~~
+    ::
 
         # Read a stereo file, atenuate one channel
         >>> stereo, sr = sndread("stereo.wav")
@@ -386,16 +397,20 @@ def sndwrite_like(samples:np.ndarray, likefile:str, outfile:str, sr:int=None) ->
         outfile: the file to write to
         sr: sample rate can be overridden
 
-    Example::
+
+    Example
+    ~~~~~~~
+
+    ::
 
         # Read a file, apply a fade-in of 0.5 seconds, save it
-        >>> import numpy as np
-        >>> samples, sr = sndread("stereo.wav")
-        >>> fadesize = int(0.5*sr)
-        >>> ramp = np.linspace(0, 1, fadesize))
-        >>> samples[:fadesize, 0] *= ramp
-        >>> samples[:fadesize, 1] *= ramp
-        >>> sndwrite_like(samples, "stereo.wav", "out.wav")
+        import numpy as np
+        samples, sr = sndread("stereo.wav")
+        fadesize = int(0.5*sr)
+        ramp = np.linspace(0, 1, fadesize))
+        samples[:fadesize, 0] *= ramp
+        samples[:fadesize, 1] *= ramp
+        sndwrite_like(samples, "stereo.wav", "out.wav")
 
     """
     info = sndinfo(likefile)
@@ -702,7 +717,9 @@ def _get_backend(path:str=None, key:Callable[[Backend], bool]=None) -> Opt[Backe
         key: a function (backend) -> bool signaling if the backend
              is suitable for a specific task
 
-    Example::
+    Example
+    ~~~~~~~
+    ::
 
         # Get available backends which can read in chunks
         >>> backend = _get_backend('file.flac', key=lambda backend:backend.can_read_chunked())

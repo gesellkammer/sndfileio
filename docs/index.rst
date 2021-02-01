@@ -3,10 +3,13 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
+
 Welcome to sndfileio's documentation!
 =====================================
 
 This package provides a simple and unified API to read and write sound-files to
-and from numpy arrays. 
+[Oand from numpy arrays. 
 
 .. automodapi:: sndfileio
+    :no-inheritance-diagram:[O[I[O[I]]]]
+

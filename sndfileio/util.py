@@ -26,12 +26,12 @@ def numchannels(samples:np.ndarray) -> int:
 def apply_multichannel(data:np.ndarray, func:Callable[[np.ndarray], np.ndarray]
                        ) -> np.ndarray:
     """
-    Apply a function (samples1D) -> samples1D along the channels of
-    a multichannel sample array, returning a multichannel sample array
-    of the same shape
+    Apply a function ``(samples1D) -> samples1D`` along the channels of a multichannel
+    sample array, returning a multichannel sample array of the same shape
 
     Args:
-        the samples
+        data: the samples
+        func: the function to apply to each channel
 
     Returns:
         the resulting samples
