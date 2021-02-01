@@ -50,6 +50,9 @@ Installation
 Make sure that you have ``libsamplerate`` installed.
 
 
+.. code::bash
+
+
     pip install sndfileio
     
 
