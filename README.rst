@@ -44,28 +44,21 @@ resample
 Resample a numpy array to a new samplerate
 
 
+Installation
+------------
+
+Make sure that you have ``libsamplerate`` installed.
+
+
+    pip install sndfileio
+    
+
 Dependencies
 ------------
 
--  numpy
--  scipy
--  ``pysndfile``
+-  ``libsamplerate`` (``apt install libsndfile1-dev``)
 
-   -  https://pypi.python.org/pypi/pysndfile
-   -  ``pip install pysndfile``
-   -  extends support to many formats, like .flac, .ogg, etc.
-   -  needs the sndfile library (``apt install libsndfile1-dev``)
-
--  ``python-samplerate``
-
-   -  https://github.com/tuxu/python-samplerate
-   -  Provides efficient and high quality resampling
-
--  ``miniaudio``
-
-   -  https://github.com/irmen/pyminiaudio
-   -  Provides support for .mp3 through a c extension, very efficient
-
+All python dependencies are installed by ``pip``
 
 License
 -------
