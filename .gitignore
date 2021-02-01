@@ -5,3 +5,4 @@ dist
 *.pyc
 *.bak
 .*
+docs/_*

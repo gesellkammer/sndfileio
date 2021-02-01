@@ -40,10 +40,8 @@ from . import backend_miniaudio
 
 from .util import numchannels
 from .datastructs import SndInfo, Sample
-from typing import (
-    Tuple, Union, Iterator, Optional as Opt,
-    List, Callable
-)
+from typing import Tuple, Union, Iterator, Optional as Opt, List, Callable, Type
+import numpyx
 
 logger = logging.getLogger("sndfileio")
 
@@ -56,11 +54,11 @@ __all__ = [
     "sndwrite_chunked",
     "sndwrite_chunked_like",
     "bitdepth",
-    "numchannels",
     "asmono",
-    "getchannel"
+    "getchannel",
+    "SndInfo",
+    "SndWriter"
 ]
-
 
 
 class FormatNotSupported(Exception):
@@ -100,15 +98,29 @@ def _chunks(start:int, end:int, step:int) -> Iterator[Tuple[int, int]]:
 class SndWriter:
     
     def __init__(self, parent, sr:int, outfile:str, encoding:str) -> None:
-        self.sr = sr
-        self.outfile = outfile
-        self.encoding = encoding
+        self.sr:int = sr
+        self.outfile:str = outfile
+        self.encoding:str = encoding
         self._parent = parent  
         self._file = None
 
+    def __call__(self, frames: np.ndarray) -> None:
+        """
+        write the given sample data. The first array will determine the
+        number of channels to write
+
+        Args:
+            frames (np.ndarray): the samples to write
+        """
+        return self.write(frames)
+
     def write(self, frames: np.ndarray) -> None:
         """ write the given sample data. The first array will determine the
-         number of channels to write """
+         number of channels to write
+
+        Args:
+            frames (np.ndarray): the samples to write
+        """
         pass
 
     def close(self) -> None:
@@ -123,7 +135,7 @@ class SndWriter:
         self.close()
 
     @property
-    def filetypes(self):
+    def filetypes(self) -> List[str]:
         return self._parent.filetypes_write
 
 
@@ -150,9 +162,11 @@ def sndread(path:str, start:float=0, end:float=0) -> Sample:
 def sndread_chunked(path:str, chunksize:int=2048, skiptime:float=0.
                     ) -> Iterator[np.ndarray]:
     """
+    Read a soundfile in chunks
+
     Args:
         path: the path to read
-        chunksize: the chunksize
+        chunksize: the chunksize, in samples
         skiptime: time to skip before reading
 
     Returns:
@@ -172,7 +186,7 @@ def sndinfo(path:str) -> SndInfo:
     Get info about a soundfile
 
     Args:
-        path (str): the path to a soundfile
+        path: the path to a soundfile
 
     Returns:
         a SndInfo, a namedtuple with attributes (samplerate:int, nframes:int, channels:int,
@@ -188,13 +202,17 @@ def sndinfo(path:str) -> SndInfo:
 def sndwrite(samples:np.ndarray, sr:int, outfile:str, encoding:str='auto',
              normalize_if_clipping=True) -> None:
     """
+    Write all samples to a soundfile.
+
     Args:
-        samples: Array-like. the actual samples, shape=(nframes, channels)
+        samples: Array-like. the actual samples. The shape determines the
+            number of channels of outfile. For 1 channel, ``shape=(nframes,)`` or
+            ``shape=(nframes, 1)``. For multichannel audio, ``shape=(nframes, nchannels)``.
         sr: Sampling-rate
         outfile: The name of the outfile. the extension will determine
             the file-format. The formats supported depend on the available 
             backends. 
-        encoding: one of 'auto', 'pcm16', 'pcm24', 'pcm32', 'flt32'.
+        encoding: one of "auto", "pcm16", "pcm24", "pcm32", "flt32".
         normalize_if_clipping: prevent clipping by normalizing samples before
             writing. This only makes sense when writing pcm data
             
@@ -207,9 +225,19 @@ def sndwrite(samples:np.ndarray, sr:int, outfile:str, encoding:str='auto',
         For bitdepths of 8, 16 and 24 bits, a PCM encoding will be used.
         For a bitdepth of 32 bits, a FLOAT encoding will be used,
         or the next lower supported encoding
+
+    Example::
+
+
+        # Normalize and save as flac
+        >>> samples, sr = sndread("sndfile.wav")
+        >>> maxvalue = max(samples.max(), -samples.min())
+        >>> samples *= 1/maxvalue
+        >>> sndwrite(samples, sr, "out.flac")
+
     """
     if encoding in ('auto', None):
-        encoding = _guess_encoding(samples, outfile)
+        encoding = guess_encoding(samples, outfile)
     if encoding.startswith('pcm') and normalize_if_clipping:
         clipping = ((samples > 1).any() or (samples < -1).any())
         if clipping:
@@ -228,33 +256,33 @@ def sndwrite(samples:np.ndarray, sr:int, outfile:str, encoding:str='auto',
 
 def sndwrite_chunked(sr: int, outfile: str, encoding: str='auto') -> SndWriter:
     """
-    Returns a SndWriter. Call its :meth:`write` method to write samples to it
+    Opens a file for writing and returns a SndWriter, which can be called to write
+    samples to the file
+
+    Not all file formats support all encodings. Throws a SndfileError
+    if the format does not support the given encoding.
+    If set to 'auto', an encoding will be selected based on the
+    file-format and on the data. The bitdepth of the data is
+    measured, and if the file-format supports it, it will be used.
+    For bitdepths of 8, 16 and 24 bits, a PCM encoding will be used.
+    For a bitdepth of 32 bits, a FLOAT encoding will be used,
+    or the next lower supported encoding
 
     Args:
         sr: Sampling-rate
-        outfile: The name of the outfile. the extension will determine
-            the file-format. The formats supported depend on the available 
-            backends. 
+        outfile: The name of the outfile. the extension will determine the file-format.
+            The formats supported depend on the available backends.
         encoding: one of 'auto', 'pcm16', 'pcm24', 'pcm32', 'flt32'.
 
 
-    .. note:: 
-        Not all file formats support all encodings. Throws a SndfileError 
-        if the format does not support the given encoding.
-        If set to 'auto', an encoding will be selected based on the
-        file-format and on the data. The bitdepth of the data is
-        measured, and if the file-format supports it, it will be used.
-        For bitdepths of 8, 16 and 24 bits, a PCM encoding will be used.
-        For a bitdepth of 32 bits, a FLOAT encoding will be used,
-        or the next lower supported encoding
+    Example
+    ~~~~~~~
 
-    Example::
-
-        with sndwrite_chunked(44100, "out.flac") as writer:
-            for buf in sndread_chunked("in.flac"):
-                # do some processing, like changing the gain
-                buf *= 0.5
-                writer.write(buf)
+        >>> with sndwrite_chunked(44100, "out.flac") as writer:
+        ...     for buf in sndread_chunked("in.flac"):
+        ...         # do some processing, like changing the gain
+        ...         buf *= 0.5
+        ...         writer.write(buf)
 
     """
     backends = [backend for backend in _get_backends() if backend.can_write_chunked]
@@ -273,8 +301,7 @@ def asmono(samples:np.ndarray, channel:Union[int, str]=0) -> np.ndarray:
 
     Args:
         samples: the multichannel samples
-        channel: the channel number to use, or 'mix' to mix-down
-            all channels
+        channel: the channel number to use, or 'mix' to mix-down all channels
 
     Returns:
         the samples as one mono channel
@@ -301,6 +328,15 @@ def getchannel(samples: np.ndarray, channel:int) -> np.ndarray:
 
     Returns:
         the channel specified, as a numpy array
+
+    Example::
+
+        # Read a stereo file, atenuate one channel
+        >>> stereo, sr = sndread("stereo.wav")
+        >>> ch0 = getchannel(stereo, 0)
+        >>> ch0 *= 0.5
+        >>> sndwrite_like(stereo, "stereo.wav", "out.wav")
+
     """
     N = numchannels(samples)
     if channel > (N - 1):
@@ -317,6 +353,9 @@ def bitdepth(data:np.ndarray, snap:bool=True) -> int:
     Args:
         data: a numpy.array (mono or multi-channel)
         snap: snap to 8, 16, 24 or 32 bits.
+
+    Returns:
+        the bits needed to represent the data
     """
     data = asmono(data)
     maxitems = min(4096, data.shape[0])
@@ -336,22 +375,49 @@ def bitdepth(data:np.ndarray, snap:bool=True) -> int:
     return maxbits
 
 
-def sndwrite_like(samples:np.ndarray, likefile:str, outfile:str) -> None:
+def sndwrite_like(samples:np.ndarray, likefile:str, outfile:str, sr:int=None) -> None:
     """
     Write samples to outfile with samplerate and encoding
     taken from likefile
+
+    Args:
+        samples: the samples to write
+        likefile: the file to use as a reference for sr, format and encoding
+        outfile: the file to write to
+        sr: sample rate can be overridden
+
+    Example::
+
+        # Read a file, apply a fade-in of 0.5 seconds, save it
+        >>> import numpy as np
+        >>> samples, sr = sndread("stereo.wav")
+        >>> fadesize = int(0.5*sr)
+        >>> ramp = np.linspace(0, 1, fadesize))
+        >>> samples[:fadesize, 0] *= ramp
+        >>> samples[:fadesize, 1] *= ramp
+        >>> sndwrite_like(samples, "stereo.wav", "out.wav")
+
     """
     info = sndinfo(likefile)
-    sndwrite(samples, info.samplerate, outfile, encoding=info.encoding)
+    sndwrite(samples, sr or info.samplerate, outfile, encoding=info.encoding)
 
 
-def sndwrite_chunked_like(likefile:str, outfile:str) -> SndWriter:
+def sndwrite_chunked_like(likefile:str, outfile:str, sr:int=None) -> SndWriter:
     """
     Create a SndWriter to write samples to `outfile`, based on the
-    samplerate/format/encoding in the source file `likefile`
+    samplerate/format/encoding in the source file `likefile`. See `sndwrite_chunked`
+
+    Args:
+        likefile: the file to use as reference
+        outfile: the file to open for writing
+        sr: samplerate can be overridden
+
+    Returns:
+        a :class:`SndWriter`. Call :meth:`write` on it to write to
+        the file
     """
     info = sndinfo(likefile)
-    return sndwrite_chunked(info.samplerate, outfile, info.encoding)
+    return sndwrite_chunked(sr or info.samplerate, outfile, info.encoding)
 
 
 ############################################
@@ -377,7 +443,7 @@ class _PySndfileWriter(SndWriter):
         else:
             numchannels = frames.shape[1] if len(frames.shape) > 1 else 1
             if self.encoding == 'auto':
-                self.encoding = _guess_encoding(frames, self.outfile)
+                self.encoding = guess_encoding(frames, self.outfile)
             self._openFile(numchannels)
             self.write(frames)
 
@@ -405,7 +471,7 @@ class Backend:
         self.can_write_chunked = can_write_chunked
         self.name = name
         self._backend = None
-        self._writer = None
+        self._writer: Opt[Type[SndWriter]] = None
 
     def read(self, path:str, start:float=0, end:float=0) -> Sample:
         return NotImplemented
@@ -535,6 +601,8 @@ class _Miniaudio(Backend):
         ext = _os.path.splitext(path)[1].lower()
         if ext == '.mp3':
             return backend_miniaudio.mp3info(path)
+        else:
+            raise FormatNotSupported(f"format {ext} is not supported")
 
     def read(self, path: str, start:float=0., end:float=0.) -> Sample:
         ext = _os.path.splitext(path)[1].lower()
@@ -569,7 +637,7 @@ def report_backends():
 #   HELPERS ------------------------------------
 
 
-def asFloatArray(data:np.ndarray, encoding:str) -> np.ndarray:
+def as_float_array(data:np.ndarray, encoding:str) -> np.ndarray:
     """
     Convert (if necessary) an array containing pcm (integer) samples
     to float64 between -1:1
@@ -669,23 +737,46 @@ def _mix(samples:np.ndarray, scale_by_numchannels:bool=True) -> np.ndarray:
     return summed
 
 
-def _guess_encoding(data:np.ndarray, outfile:str) -> str:
-    ext = _os.path.splitext(outfile)[1].lower()
-    maxbits = min(32, bitdepth(data, snap=True))
-    if ext in ('.wav', '.aif', '.aiff'):
+def _samples_out_of_range(data:np.ndarray) -> bool:
+    for i in range(numchannels(data)):
+        ch = getchannel(data, i)
+        if numpyx.any_less_than(ch, -1) or numpyx.any_greater_than(ch, 1):
+            return True
+    return False
+
+
+def guess_encoding(data:np.ndarray, fmt: str) -> str:
+    """
+    Guess the encoding for data based on the format. For each format
+    an encoding is selected which is able to represent the data without
+    loss. In the case of wav/aiff, if there is sample data outside of the
+    -1:1 range, a flt32 encoding is chosen, since any pcm representation
+    would result in out of range samples.
+
+    Args:
+        data: the samples
+        fmt: on of 'wav', 'aiff', 'flac'
+
+    Returns:
+        the encoding, one of 'pcm16', 'pcm24', 'flt32'
+    """
+    if fmt in ('wav', 'aif', 'aiff'):
+        if _samples_out_of_range(data):
+            return 'flt32'
+        maxbits = min(32, bitdepth(data, snap=True))
         encoding = {
             16: 'pcm16',
             24: 'pcm24',
             32: 'flt32',
         }.get(maxbits, 'flt32')
-    elif ext == ".flac":
+    elif fmt == "flac":
+        maxbits = min(24, bitdepth(data, snap=True))
         encoding = {
             16: 'pcm16',
             24: 'pcm24',
-            32: 'pcm24'
         }.get(maxbits, 'pcm24')
     else:
-        raise FormatNotSupported(f"The format {ext} is not supported")
+        raise FormatNotSupported(f"The format {fmt} is not supported")
     assert encoding in ('pcm16', 'pcm24', 'flt32')
     return encoding
 

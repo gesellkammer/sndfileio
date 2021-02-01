@@ -2,7 +2,7 @@ from __future__ import print_function
 from setuptools import setup
 import sys, os
 
-version = "1.0.0"
+version = "1.1.0"
 
 
 short_description = "Common API for reading writing soundfiles"
@@ -12,7 +12,7 @@ if sys.version_info < (3,8):
 
 # read the contents of your README file
 thisdir = os.path.abspath(os.path.dirname(__file__))
-with open(os.path.join(thisdir, 'README.md')) as f:
+with open(os.path.join(thisdir, 'README.rst')) as f:
     long_description = f.read()
 
 
@@ -24,16 +24,16 @@ setup(
         "scipy",
         "pysndfile",
         "miniaudio",
-        "nnresample"],
+        "nnresample",
+        "numpyx>=0.4.1"],
     packages = ["sndfileio"],
-    package_data = {'': ['README.md']},
+    package_data = {'': ['README.rst']},
     include_package_data = True,
 
     # Metadata
     version      = version,
     description = short_description,
     long_description = long_description,
-    long_description_content_type='text/markdown',
     summary      = "Simple API for reading and writing soundfiles", 
     author       = "Eduardo Moguillansky",
     author_email = "eduardo.moguillansky@gmail.com",
