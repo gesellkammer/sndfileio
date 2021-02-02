@@ -1,5 +1,6 @@
-SNDFILE.IO
-==========
+*********
+SNDFILEIO
+*********
 
 This package provides a simple and unified API to read and write sound-files to
 and from numpy arrays. 
