@@ -4,6 +4,12 @@ SNDFILE.IO
 This package provides a simple and unified API to read and write sound-files to
 and from numpy arrays. 
 
+Documentation
+-------------
+
+https://sndfileio.readthedocs.io/en/latest/
+
+
 API
 ---
 
@@ -42,6 +48,32 @@ resample
 ~~~~~~~~
 
 Resample a numpy array to a new samplerate
+
+
+Examples
+--------
+
+
+.. code-block:: python
+
+    # Normalize and save as flac
+    from sndfileio import sndread, sndwrite
+    samples, sr = sndread("in.wav")
+    maxvalue = max(samples.max(), -samples.min())
+    samples *= 1/maxvalue
+    sndwrite(samples, sr, "out.flac")
+
+
+.. code-block:: python
+
+    # Process a file in chunks
+    from sndfileio import *
+    from sndfileio.dsp import
+    with sndwrite_chunked(44100, "out.flac") as writer:
+        for buf in sndread_chunked("in.flac"):
+            # do some processing, like changing the gain
+            buf *= 0.5
+            writer.write(buf)
 
 
 Installation
