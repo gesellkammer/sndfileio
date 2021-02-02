@@ -145,7 +145,7 @@ def sndread(path:str, start:float=0, end:float=0) -> Sample:
     return backend.read(path, start=start, end=end)
 
 
-def sndread_chunked(path:str, chunksize:int=2048, skiptime:float=0.
+def sndread_chunked(path:str, chunksize:int=2048, start:float=0., stop:float=0.
                     ) -> Iterator[np.ndarray]:
     """
     Read a soundfile in chunks
@@ -153,7 +153,8 @@ def sndread_chunked(path:str, chunksize:int=2048, skiptime:float=0.
     Args:
         path: the path to read
         chunksize: the chunksize, in samples
-        skiptime: time to skip before reading
+        start: time to skip before reading
+        stop: time to stop reading (0=end of file)
 
     Returns:
         a generator yielding numpy arrays (float64) of at most `chunksize` frames
@@ -172,7 +173,7 @@ def sndread_chunked(path:str, chunksize:int=2048, skiptime:float=0.
     backend = _get_backend(path, key=lambda backend: backend.can_read_chunked)
     if backend:
         logger.debug(f"sndread_chunked: using backend {backend.name}")
-        return backend.read_chunked(path, chunksize, skiptime=skiptime)
+        return backend.read_chunked(path, chunksize, start=start, stop=stop)
     else:
         raise SndfileError("chunked reading is not supported by the "
                            "available backends")
@@ -246,7 +247,7 @@ def sndwrite(samples:np.ndarray, sr:int, outfile:str, encoding:str='auto',
 
     """
     if encoding in ('auto', None):
-        encoding = guess_encoding(samples, outfile)
+        encoding = guess_encoding(samples, _os.path.splitext(outfile)[1][1:])
     if encoding.startswith('pcm') and normalize_if_clipping:
         clipping = ((samples > 1).any() or (samples < -1).any())
         if clipping:
@@ -450,16 +451,17 @@ class _PySndfileWriter(SndWriter):
             raise ValueError("Format %s not supported by this backend" % major)
         ext = _os.path.splitext(self.outfile)[1]
         sndformat = self._parent._getSndfileFormat(ext, self.encoding)
+        print(f"opening file with {channels} channels")
         self._file = pysndfile.PySndfile(self.outfile, "w", sndformat, channels, self.sr)
 
     def write(self, frames:np.ndarray) -> None:
         if self._file:
             self._file.write_frames(frames)
         else:
-            numchannels = frames.shape[1] if len(frames.shape) > 1 else 1
+            nchannels = numchannels(frames)
             if self.encoding == 'auto':
-                self.encoding = guess_encoding(frames, self.outfile)
-            self._openFile(numchannels)
+                self.encoding = guess_encoding(frames, _os.path.splitext(self.outfile)[1][1:])
+            self._openFile(nchannels)
             self.write(frames)
 
     def close(self):
@@ -491,7 +493,7 @@ class Backend:
     def read(self, path:str, start:float=0, end:float=0) -> Sample:
         return NotImplemented
 
-    def read_chunked(self, path:str, chunksize:int=2048, skiptime:float=0
+    def read_chunked(self, path:str, chunksize:int=2048, start:float=0., stop:float=0.
                      ) -> Iterator[np.ndarray]:
         return NotImplemented
 
@@ -562,12 +564,19 @@ class _PySndfile(Backend):
         data = snd.read_frames(samp_end - samp_start)
         return Sample(data, sr)
 
-    def read_chunked(self, path:str, chunksize:int=2048, skiptime:float=0.
+    def read_chunked(self, path:str, chunksize:int=2048, start:float=0., stop:float=0.
                      ) -> Iterator[np.ndarray]:
         snd = pysndfile.PySndfile(path)
-        if skiptime:
-            snd.seek(int(skiptime * snd.samplerate()))
-        for pos, nframes in _chunks(0, snd.frames(), chunksize):
+        sr = snd.samplerate()
+        if start:
+            snd.seek(int(start*snd.samplerate()))
+        firstframe = int(sr * start)
+        if stop == 0:
+            lastframe = snd.frames()
+        else:
+            lastframe = int(sr * stop)
+            
+        for pos, nframes in _chunks(0, lastframe - firstframe, chunksize):
             yield snd.read_frames(nframes)
 
     def getinfo(self, path:str) -> SndInfo:
@@ -626,11 +635,12 @@ class _Miniaudio(Backend):
         else:
             raise FormatNotSupported(f"This backend does not support {ext} format")
 
-    def read_chunked(self, path:str, chunksize:int=2048, skiptime:float=0
+    def read_chunked(self, path:str, chunksize:int=2048, start:float=0., stop:float=0.
                      ) -> Iterator[np.ndarray]:
         ext = _os.path.splitext(path)[1].lower()
         if ext == '.mp3':
-            return backend_miniaudio.mp3read_chunked(path, chunksize=chunksize, skiptime=skiptime)
+            return backend_miniaudio.mp3read_chunked(path, chunksize=chunksize,
+                                                     start=start, stop=stop)
         else:
             raise FormatNotSupported(f"This backend does not support {ext} format")
 

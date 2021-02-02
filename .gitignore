@@ -7,3 +7,4 @@ dist
 .*
 docs/_*
 docs/api
+test/sndout

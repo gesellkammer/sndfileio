@@ -11,5 +11,5 @@ This package provides a simple and unified API to read and write sound-files to
 [Oand from numpy arrays. 
 
 .. automodapi:: sndfileio
-    :no-inheritance-diagram:[O[I[O[I]]]]
+    :no-inheritance-diagram:
 
