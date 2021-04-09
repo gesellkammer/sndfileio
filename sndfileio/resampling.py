@@ -155,7 +155,8 @@ def _resample_nnresample2(s:np.ndarray, up:int, down:int, beta=5.0, L=16001, axi
     Returns:
         The resampled array.
 
-    .. notes::
+    .. note::
+    
         The function keeps a global cache of filters, since they are
         determined entirely by up, down, beta, and L.  If a filter
         has previously been used it is looked up instead of being

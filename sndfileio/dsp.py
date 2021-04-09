@@ -41,10 +41,8 @@ def lowpass_cheby2_coeffs(freq:float, sr:int, maxorder=12
                           ) -> Tuple[np.ndarray, np.ndarray, float]:
     """
     Args:
-
-        freq    : The frequency above which signals are attenuated
-                  with 95 dB
-        sr      : Sampling rate in Hz.
+        freq: The frequency above which signals are attenuated with 95 dB
+        sr: Sampling rate in Hz.
         maxorder: Maximal order of the designed cheby2 filter
 
     Returns:
@@ -119,6 +117,7 @@ def filter_butter(samples: np.ndarray, sr:int, filtertype:str, freq:float, order
          the filtered samples
 
     .. note::
+    
         calls filter_butter_coeffs to calculate the coefficients
     """
     assert filtertype in ('low', 'high', 'band')

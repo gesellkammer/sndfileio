@@ -56,9 +56,15 @@ html_theme = 'sphinx_rtd_theme'
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 
+html_css_files = [
+    'css/custom.css',
+]
+
+
 
 # The name of the Pygments (syntax highlighting) style to use.
-pygments_style = "friendly"
+# pygments_style = "friendly"
+pygments_style = "monokai"
 
 
 # Disable having a separate return type row
