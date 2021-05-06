@@ -8,7 +8,7 @@ Welcome to sndfileio's documentation!
 =====================================
 
 This package provides a simple and unified API to read and write sound-files to
-[Oand from numpy arrays. 
+and from numpy arrays. 
 
 .. automodapi:: sndfileio
     :no-inheritance-diagram:
