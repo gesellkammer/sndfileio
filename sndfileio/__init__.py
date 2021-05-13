@@ -18,16 +18,24 @@ API
 
 Read / write a file in one function.
 
-sndinfo
+:func:`sndinfo<sndfileio.sndinfo>`
+----------------------------------
+
     Returns a :class:`SndInfo` with all the information of the sound-file
 
-sndread
+:func:`sndread<sndfileio.sndread>`
+----------------------------------
+
     Reads ALL the samples. Returns a tuple (data, samplerate)
 
-sndwrite
+:func:`sndwrite<sndfileio.sndwrite>`
+------------------------------------
+
     Write samples to outfile
 
-sndwrite_like
+:func:`sndwrite_like<sndfileio.sndwrite_like>`
+----------------------------------------------
+
     Write samples to outfile cloning another files format & encoding
 
 
@@ -38,10 +46,11 @@ It is possible to stream a soundfile by reading and processing chunks. This
 is helpful in order to avoid allocating memory for a large. The same is possible
 for writing
 
-sndread_chunked
+:func:`sndread_chunked<sndfileio.sndead_chunked>`
+
     returns a generator yielding chunks of frames
 
-sndwrite_chunked
+:func:`sndwrite_chunked<sndfileio.sndwrite_chunked>`
     opens the file for writing. Returns a :class:`SndWriter`. To write to the file,
     call :meth:`write` on the returned handle
 

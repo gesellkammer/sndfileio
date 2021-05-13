@@ -106,20 +106,20 @@ def _fileformat_from_ext(ext: str) -> str:
 
 class SndWriter:
     """
-    Class returned by :meth:`sndwrite_chunked` to write samples as they become available
-    (via calling its :meth:`SndWriter.write` method).
+    Class returned by :meth:`sndwrite_chunked` to write samples
 
     Args:
         backend: the Backend instance which created this SndWriter
         sr: the samplerate
         outfile: the file to wite
-        encoding: the encoding of the file (pcmXX, floatXX)
+        encoding: the encoding of the file (*pcmXX*, *floatXX*, where *XX* represents
+            the bits per sample)
         fileformat: the fileformat, only needed if the format indicated by the
             extension in outfile should be overridden
-        metadata: a dict {str: str}.
+        metadata: a dict ``{str: str}``.
 
-    Metadata Possible Keys
-    ----------------------
+
+    **Metadata Possible Keys**:
 
     * title
     * comment
@@ -127,6 +127,15 @@ class SndWriter:
     * album
     * tracknumber
 
+    Example
+    =======
+
+    >>> writer = sndwrite_chunked("out.flac", 44100)
+    # writer is a SndWriter
+    >>> for buf in sndread_chunked("in.flac"):
+    ...     # do some processing, like changing the gain
+    ...     buf *= 0.5
+    ...     writer.write(buf)
     """
     def __init__(self, backend, sr:int, outfile:str, encoding:str,
                  fileformat: str = None,
@@ -269,7 +278,7 @@ def sndinfo(path:str) -> SndInfo:
     ~~~~~~~
     ::
 
-        >>> from sndfileio import sndinfo
+        >>> from sndfileio import *
         >>> info = sndinfo("sndfile.wav")
         >>> print(f"Duration: {info.duration}s, samplerate: {info.samplerate}")
         Duration: 0.4s, samplerate: 44100
@@ -626,7 +635,8 @@ class Backend:
             outfile: the file to write
             encoding: the encoding used (pcm16, float32, etc)
             fileformat: the file format
-            metadata: if given, a dict str:str. Allowed keys are: xxx
+            metadata: if given, a dict str:str. Allowed keys are: *title*, *comment*,
+                *artist*, *tracknumber*, *album*
 
         Returns:
             a :class:`SndWriter` 
@@ -741,7 +751,8 @@ class _PySndfile(Backend):
 
         Args:
             fileformat: the fileformat, one of 'wav', 'aiff', etc
-            encoding: one of pcmXX or floatXX
+            encoding: one of *pcmXX* or *floatXX* (where *XX *is the number of bits/sample,
+                one of 16, 24, 32, 64)
 
         Returns:
             the pysndfile format id

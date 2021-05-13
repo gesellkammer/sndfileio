@@ -12,4 +12,5 @@ and from numpy arrays.
 
 .. automodapi:: sndfileio
     :no-inheritance-diagram:
+    :skip: bitdepth, asmono  
 
