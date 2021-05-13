@@ -2,7 +2,7 @@ from __future__ import print_function
 from setuptools import setup
 import sys, os
 
-version = "1.3.2"
+version = "1.4.0"
 
 
 short_description = "Simple API for reading / writing soundfiles"
