@@ -29,14 +29,21 @@ __all__ = [
 ]
 
 
-_metadataPossibleKeys = {'comment', 'title', 'artist', 'album', 'tracknumber'}
+_metadata_possible_keys = {'comment', 'title', 'artist', 'album', 'tracknumber'}
 
+_encodings_for_format = {
+    'wav': ['pcm16', 'pcm24', 'pcm32', 'float32', 'float64'],
+    'aiff': ['pcm16', 'pcm24', 'pcm32', 'float32', 'float64'],
+    'flac': ['pcm16', 'pcm24'],
+    'mp3': ['pcm16', 'pcm24'],
+    'ogg': ['pcm16', 'pcm24']
+}
 
 class FormatNotSupported(Exception):
     pass
 
 
-def _isPackageInstalled(pkg):
+def _is_package_installed(pkg):
     return importlib.util.find_spec(pkg) is not None
 
 
@@ -66,6 +73,37 @@ def _chunks(start:int, end:int, step:int) -> Iterator[Tuple[int, int]]:
 #
 ########################################
 
+
+_known_fileformats = _encodings_for_format.keys()
+
+
+def _fileformat_from_ext(ext: str) -> str:
+    """
+    Deduces the file format from the extension
+
+    The returned file format is always a lowercase string,
+    one of "wav", "aiff", "flac", "ogg", "wv", "mp3"
+
+    Examples
+    --------
+
+    >>> _fileformat_from_ext(("out.wav"))
+    wav
+    >>> _fileformat_from_ext(("foo.FLAC"))
+    flac
+    >>> _fileformat_from_ext(("bar.aif"))
+    aiff
+
+    """
+    if ext.startswith("."):
+        ext = ext[1:]
+    ext = ext.lower()
+    if ext == "aif":
+        return "aiff"
+    assert ext in _known_fileformats
+    return ext
+
+
 class SndWriter:
     """
     Class returned by :meth:`sndwrite_chunked` to write samples as they become available
@@ -76,6 +114,8 @@ class SndWriter:
         sr: the samplerate
         outfile: the file to wite
         encoding: the encoding of the file (pcmXX, floatXX)
+        fileformat: the fileformat, only needed if the format indicated by the
+            extension in outfile should be overridden
         metadata: a dict {str: str}.
 
     Metadata Possible Keys
@@ -89,23 +129,26 @@ class SndWriter:
 
     """
     def __init__(self, backend, sr:int, outfile:str, encoding:str,
+                 fileformat: str = None,
                  metadata: Dict[str, str]=None) -> None:
         if metadata:
             for key in metadata:
-                if key not in _metadataPossibleKeys:
+                if key not in _metadata_possible_keys:
                     raise KeyError(f"Metadata key {key} unknown. Possible keys: "
-                                   f"{_metadataPossibleKeys}")
+                                   f"{_metadata_possible_keys}")
         self.sr:int = sr
         self.outfile:str = outfile
         self.encoding:str = encoding
         self.metadata: Opt[Dict[str, str]] = metadata
+        self.fileformat = fileformat or _fileformat_from_ext(_os.path.splitext(outfile)[1])
         self._backend = backend
         self._file = None
 
     def __call__(self, frames: np.ndarray) -> None:
         """
-        Write the given sample data. The first array will determine the
-        number of channels to write
+        Write the given sample data.
+
+        The first array will determine the number of channels to write
 
         Args:
             frames (np.ndarray): the samples to write
@@ -240,7 +283,8 @@ def sndinfo(path:str) -> SndInfo:
 
 
 def sndwrite(outfile:str, samples:np.ndarray, sr:int, encoding:str='auto',
-             normalize_if_clipping=True, metadata: Dict[str, str]=None) -> None:
+             fileformat:str=None, normalize_if_clipping=True,
+             metadata: Dict[str, str]=None) -> None:
     """
     Write all samples to a soundfile.
 
@@ -253,6 +297,7 @@ def sndwrite(outfile:str, samples:np.ndarray, sr:int, encoding:str='auto',
             ``shape=(nframes, 1)``. For multichannel audio, ``shape=(nframes, nchannels)``.
         sr: Sampling-rate
         encoding: one of "auto", "pcm16", "pcm24", "pcm32", "pcm64", "float32", "float64"
+        fileformat: if given, will override the format indicated by the extension
         normalize_if_clipping: prevent clipping by normalizing samples before
             writing. This only makes sense when writing pcm data
         metadata: a dict of str:str, with possible keys 'title', 'comment', 'artist',
@@ -281,25 +326,28 @@ def sndwrite(outfile:str, samples:np.ndarray, sr:int, encoding:str='auto',
         >>> sndwrite("out.flac", samples, sr)
 
     """
+    if not fileformat:
+        fileformat = _fileformat_from_ext(_os.path.splitext(outfile)[1])
     if encoding in ('auto', None):
-        encoding = guess_encoding(samples, _os.path.splitext(outfile)[1][1:])
+        encoding = guess_encoding(samples, fileformat)
     if encoding.startswith('pcm') and normalize_if_clipping:
         clipping = ((samples > 1).any() or (samples < -1).any())
         if clipping:
             maxvalue = max(samples.max(), abs(samples.min()))
             logger.warning(f"Clipping found when writing pcm data to {outfile}")
             samples = samples / maxvalue
-    backend = _get_write_backend(outfile, encoding)
+    backend = _get_write_backend(fileformat)
     if not backend:
-        raise SndfileError("No backend found to support the given format")
+        raise SndfileError(f"No backend found to support the given format: {fileformat}")
     logger.debug(f"sndwrite: using backend {backend.name}")
-    writer = backend.writer(sr=sr, outfile=outfile, encoding=encoding, metadata=metadata)
+    writer = backend.writer(sr=sr, outfile=outfile, encoding=encoding, metadata=metadata,
+                            fileformat=fileformat)
     if not writer:
         raise SndfileError(f"Could not write to {outfile} with backend {backend.name}")
     return writer.write(samples)
 
 
-def sndwrite_chunked(outfile:str, sr: int, encoding: str='auto',
+def sndwrite_chunked(outfile:str, sr: int, encoding: str='auto', fileformat:str=None,
                      metadata: Dict[str, str]=None) -> SndWriter:
     """
     Opens a file for writing and returns a SndWriter
@@ -320,7 +368,9 @@ def sndwrite_chunked(outfile:str, sr: int, encoding: str='auto',
         outfile: The name of the outfile. the extension will determine the file-format.
             The formats supported depend on the available backends.
         sr: Sampling-rate
-        encoding: one of 'auto', 'pcm16', 'pcm24', 'pcm32', 'float32'.
+        encoding: one of 'auto', 'pcm16', 'pcm24', 'pcm32', 'float32', 'float64'.
+        fileformat: needed only if the format cannot be determined from the extension
+            (for example, if saving to an outfile with a non-traditional extension)
         metadata: a dict ``{str:str}`` with possible keys: 'comment', 'title', 'artist',
             'album', 'tracknumber'
 
@@ -343,7 +393,7 @@ def sndwrite_chunked(outfile:str, sr: int, encoding: str='auto',
         raise SndfileError("No backend found to support the given format")
     backend = min(backends, key=lambda backend:backend.priority)
     logger.debug(f"sndwrite_chunked: using backend {backend.name}")
-    return backend.writer(sr, outfile, encoding, metadata=metadata)
+    return backend.writer(outfile, sr, encoding, metadata=metadata, fileformat=fileformat)
 
 
 def asmono(samples:np.ndarray, channel:Union[int, str]=0) -> np.ndarray:
@@ -506,12 +556,10 @@ class _PySndfileWriter(SndWriter):
         'tracknumber': 'SF_STR_TRACKNUMBER',
     }
 
-    def _openFile(self, channels:int) -> None:
-        major = _os.path.splitext(self.outfile)[1]
-        if major not in self.filetypes:
-            raise ValueError("Format %s not supported by this backend" % major)
-        ext = _os.path.splitext(self.outfile)[1]
-        sndformat = self._backend._getSndfileFormat(ext, self.encoding)
+    def _open_file(self, channels:int) -> None:
+        if self.fileformat not in self.filetypes:
+            raise ValueError(f"Format {self.fileformat} not supported by this backend")
+        sndformat = self._backend._get_sndfile_format(self.fileformat, self.encoding)
         self._file = pysndfile.PySndfile(self.outfile, "w", sndformat, channels, self.sr)
         if self.metadata:
             for k, v in self.metadata.items():
@@ -524,8 +572,8 @@ class _PySndfileWriter(SndWriter):
         else:
             nchannels = numchannels(frames)
             if self.encoding == 'auto':
-                self.encoding = guess_encoding(frames, _os.path.splitext(self.outfile)[1][1:])
-            self._openFile(nchannels)
+                self.encoding = guess_encoding(frames, self.fileformat)
+            self._open_file(nchannels)
             self.write(frames)
 
     def close(self):
@@ -540,7 +588,6 @@ class Backend:
     def __init__(self, priority:int,
                  filetypes:List[str],
                  filetypes_write:List[str],
-                 encodings: List[str],
                  can_read_chunked:bool,
                  can_write_chunked:bool,
                  name:str,
@@ -548,7 +595,6 @@ class Backend:
         self.priority = priority
         self.filetypes = filetypes
         self.filetypes_write = filetypes_write
-        self.encodings = encodings
         self.can_read_chunked = can_read_chunked
         self.can_write_chunked = can_write_chunked
         self.supports_metadata = supports_metadata
@@ -569,15 +615,17 @@ class Backend:
 
     def is_available(self) -> bool:
         """ Is this backend available? """
-        return _isPackageInstalled(self.name)
+        return _is_package_installed(self.name)
 
-    def writer(self, sr:int, outfile:str, encoding:str, metadata: Dict[str, str]=None) -> SndWriter:
+    def writer(self, outfile:str, sr:int, encoding:str, fileformat:str,
+               metadata: Dict[str, str]=None) -> SndWriter:
         """ Open outfile for write with the given properties 
 
         Args:
             sr: samplerate
             outfile: the file to write
             encoding: the encoding used (pcm16, float32, etc)
+            fileformat: the file format
             metadata: if given, a dict str:str. Allowed keys are: xxx
 
         Returns:
@@ -585,18 +633,16 @@ class Backend:
         """
         if self._writer is None:
             raise SndfileError("This backend does not support writing")
-        return self._writer(self, sr, outfile, encoding, metadata=metadata)
+        return self._writer(self, sr=sr, outfile=outfile, encoding=encoding,
+                            fileformat=fileformat, metadata=metadata)
 
-    def check_write(self, outfile:str, encoding:str) -> None:
+    def check_write(self, fileformat:str, encoding:str) -> None:
         """ Check if we can write to outfile with the given encoding """
-        if encoding not in self.encodings:
+        if encoding not in _encodings_for_format[fileformat]:
             raise ValueError("Encoding not supported")
-        ext = _os.path.splitext(outfile)[1].lower()
-        if ext not in self.filetypes_write:
-            raise ValueError(
-                "The given format (%s) is not supported by the %s backend" %
-                (ext, self.name)
-            )
+        if fileformat not in self.filetypes_write:
+            raise ValueError(f"The given format {fileformat} is not supported by the "
+                             f"{self.name} backend")
 
     def dump(self) -> None:
         """ Dump information about this backend """
@@ -627,9 +673,8 @@ class _PySndfile(Backend):
     def __init__(self, priority:int):
         super().__init__(
                 priority  = priority,
-                filetypes = ".aif .aiff .wav .flac .ogg .wav64 .caf .raw".split(),
-                filetypes_write = ".aif .aiff .wav .flac .ogg .wav64 .caf .raw".split(),
-                encodings = 'pcm16 pcm24 float32'.split(),
+                filetypes = ["aif", "aiff",  "wav", "flac", "ogg", "wav64", "caf", "raw"],
+                filetypes_write = ["aif", "aiff",  "wav", "flac", "ogg", "wav64", "caf", "raw"],
                 can_read_chunked = True,
                 can_write_chunked = True,
                 name = 'pysndfile',
@@ -684,21 +729,30 @@ class _PySndfile(Backend):
     def write(self, data:np.ndarray, sr:int, outfile:str, encoding:str) -> None:
         self.check_write(outfile, encoding)
         ext = _os.path.splitext(outfile)[1].lower()
-        fmt = self._getSndfileFormat(ext, encoding)
+        fmt = self._get_sndfile_format(ext, encoding)
         snd = pysndfile.PySndfile(outfile, mode='w', format=fmt,
                                   channels=numchannels(data), samplerate=sr)
         snd.write_frames(data)
         snd.writeSync()
 
-    def _getSndfileFormat(self, extension, encoding):
-        assert extension in self.filetypes
-        fmt, bits = encoding[:3], int(encoding[3:])
-        assert fmt in ('pcm', 'float') and bits in (8, 16, 24, 32)
-        extension = extension[1:]
-        if extension == 'aif':
-            extension = 'aiff'
+    def _get_sndfile_format(self, fileformat: str, encoding: str) -> int:
+        """
+        Construct a pysndfile format id from fileformat and encoding
+
+        Args:
+            fileformat: the fileformat, one of 'wav', 'aiff', etc
+            encoding: one of pcmXX or floatXX
+
+        Returns:
+            the pysndfile format id
+        """
+        assert fileformat in self.filetypes
+        fmt, bits = encoding[:-2], int(encoding[-2:])
+        assert fmt in ('pcm', 'float') and bits in (8, 16, 24, 32, 64)
+        if fileformat == 'aif':
+            fileformat = 'aiff'
         fmt = f"{fmt}{bits}"
-        return pysndfile.construct_format(extension, fmt)
+        return pysndfile.construct_format(fileformat, fmt)
 
 
 class _Miniaudio(Backend):
@@ -710,7 +764,6 @@ class _Miniaudio(Backend):
                 filetypes_write = ['.mp3'],
                 can_read_chunked = True,
                 can_write_chunked = False,
-                encodings = ['pcm16'],
                 name = 'miniaudio',
                 supports_metadata=False
         )
@@ -839,13 +892,12 @@ def _get_backend(path:str=None, key:Callable[[Backend], bool]=None) -> Opt[Backe
     return None
 
 
-def _get_write_backend(outfile:str, encoding:str) -> Opt[Backend]:
+def _get_write_backend(fileformat:str) -> Opt[Backend]:
+    assert fileformat in _known_fileformats
     backends = _get_backends()
     if not backends:
         raise SndfileError("No available backends for writing")
-    ext = _os.path.splitext(outfile)[1].lower()
-    if ext:
-        backends = [b for b in backends if ext in b.filetypes_write]
+    backends = [b for b in backends if fileformat in b.filetypes_write]
     if backends:
         return min(backends, key=lambda backend: backend.priority)
     return None
