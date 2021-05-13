@@ -1,9 +1,0 @@
-numpy
-scipy
-cython
-pysndfile
-miniaudio
-nnresample
-numpyx
-sphinx-autodoc-typehints
-sphinx-automodapi

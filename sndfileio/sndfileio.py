@@ -8,7 +8,7 @@ from . import backend_miniaudio
 
 from .util import numchannels
 from .datastructs import SndInfo, Sample
-from typing import Tuple, Union, Iterator, Optional as Opt, List, Callable, Type
+from typing import Dict, Tuple, Union, Iterator, Optional as Opt, List, Callable, Type
 import numpyx
 
 logger = logging.getLogger("sndfileio")
@@ -27,6 +27,9 @@ __all__ = [
     "SndInfo",
     "SndWriter"
 ]
+
+
+_metadataPossibleKeys = {'comment', 'title', 'artist', 'album', 'tracknumber'}
 
 
 class FormatNotSupported(Exception):
@@ -67,12 +70,36 @@ class SndWriter:
     """
     Class returned by :meth:`sndwrite_chunked` to write samples as they become available
     (via calling its :meth:`SndWriter.write` method).
+
+    Args:
+        backend: the Backend instance which created this SndWriter
+        sr: the samplerate
+        outfile: the file to wite
+        encoding: the encoding of the file (pcmXX, floatXX)
+        metadata: a dict {str: str}.
+
+    Metadata Possible Keys
+    ----------------------
+
+    * title
+    * comment
+    * artist
+    * album
+    * tracknumber
+
     """
-    def __init__(self, parent, sr:int, outfile:str, encoding:str) -> None:
+    def __init__(self, backend, sr:int, outfile:str, encoding:str,
+                 metadata: Dict[str, str]=None) -> None:
+        if metadata:
+            for key in metadata:
+                if key not in _metadataPossibleKeys:
+                    raise KeyError(f"Metadata key {key} unknown. Possible keys: "
+                                   f"{_metadataPossibleKeys}")
         self.sr:int = sr
         self.outfile:str = outfile
         self.encoding:str = encoding
-        self._parent = parent
+        self.metadata: Opt[Dict[str, str]] = metadata
+        self._backend = backend
         self._file = None
 
     def __call__(self, frames: np.ndarray) -> None:
@@ -87,8 +114,9 @@ class SndWriter:
 
     def write(self, frames: np.ndarray) -> None:
         """
-        Write the given sample data. The first array will determine the
-        number of channels to write
+        Write the given sample data.
+
+        The first array will determine the number of channels to write
 
         Args:
             frames (np.ndarray): the samples to write
@@ -111,13 +139,15 @@ class SndWriter:
 
     @property
     def filetypes(self) -> List[str]:
-        return self._parent.filetypes_write
+        return self._backend.filetypes_write
 
 
 def sndread(path:str, start:float=0, end:float=0) -> Sample:
     """
-    Read a soundfile as a numpy array. This is a float array defined
-    between -1 and 1, independently of the format of the soundfile
+    Read a soundfile as a numpy array.
+
+    This is a float array defined between -1 and 1, independently of the format
+    of the soundfile
 
     Args:
         path: the path to read
@@ -160,13 +190,12 @@ def sndread_chunked(path:str, chunksize:int=2048, start:float=0., stop:float=0.
     Returns:
         a generator yielding numpy arrays (float64) of at most `chunksize` frames
 
-
     Example
     ~~~~~~~
 
     .. code::
 
-        >>> with sndwrite_chunked(44100, "out.flac") as writer:
+        >>> with sndwrite_chunked("out.flac", 44100) as writer:
         ...     for buf in sndread_chunked("in.flac"):
         ...         # do some processing, like changing the gain
         ...         buf *= 0.5
@@ -190,8 +219,8 @@ def sndinfo(path:str) -> SndInfo:
         path: the path to a soundfile
 
     Returns:
-        a :class:`SndInfo` (attributes: samplerate:int, nframes:int, channels:int,
-        encoding:str, fileformat:str)
+        a :class:`SndInfo` (attributes: **samplerate**: `int`, *nframes*: `int`, *channels*: `int`,
+        **encoding**: `str`, **fileformat**: `str`, **metadata**: `dict`)
 
     Example
     ~~~~~~~
@@ -210,25 +239,28 @@ def sndinfo(path:str) -> SndInfo:
     return backend.getinfo(path)
 
 
-def sndwrite(samples:np.ndarray, sr:int, outfile:str, encoding:str='auto',
-             normalize_if_clipping=True) -> None:
+def sndwrite(outfile:str, samples:np.ndarray, sr:int, encoding:str='auto',
+             normalize_if_clipping=True, metadata: Dict[str, str]=None) -> None:
     """
     Write all samples to a soundfile.
 
     Args:
+        outfile: The name of the outfile. the extension will determine
+            the file-format. The formats supported depend on the available
+            backends.
         samples: Array-like. the actual samples. The shape determines the
             number of channels of outfile. For 1 channel, ``shape=(nframes,)`` or
             ``shape=(nframes, 1)``. For multichannel audio, ``shape=(nframes, nchannels)``.
         sr: Sampling-rate
-        outfile: The name of the outfile. the extension will determine
-            the file-format. The formats supported depend on the available
-            backends.
-        encoding: one of "auto", "pcm16", "pcm24", "pcm32", "float32".
+        encoding: one of "auto", "pcm16", "pcm24", "pcm32", "pcm64", "float32", "float64"
         normalize_if_clipping: prevent clipping by normalizing samples before
             writing. This only makes sense when writing pcm data
+        metadata: a dict of str:str, with possible keys 'title', 'comment', 'artist',
+            'album', 'tracknumber'
 
     .. note::
-        Not all file formats support all encodings. Throws a SndfileError
+
+        Not all file formats support all encodings. Raises :class:`SndfileError`
         if the format does not support the given encoding.
         If set to 'auto', an encoding will be selected based on the
         file-format and on the data. The bitdepth of the data is
@@ -246,7 +278,7 @@ def sndwrite(samples:np.ndarray, sr:int, outfile:str, encoding:str='auto',
         >>> samples, sr = sndread("sndfile.wav")
         >>> maxvalue = max(samples.max(), -samples.min())
         >>> samples *= 1/maxvalue
-        >>> sndwrite(samples, sr, "out.flac")
+        >>> sndwrite("out.flac", samples, sr)
 
     """
     if encoding in ('auto', None):
@@ -261,39 +293,45 @@ def sndwrite(samples:np.ndarray, sr:int, outfile:str, encoding:str='auto',
     if not backend:
         raise SndfileError("No backend found to support the given format")
     logger.debug(f"sndwrite: using backend {backend.name}")
-    writer = backend.writer(sr=sr, outfile=outfile, encoding=encoding)
+    writer = backend.writer(sr=sr, outfile=outfile, encoding=encoding, metadata=metadata)
     if not writer:
         raise SndfileError(f"Could not write to {outfile} with backend {backend.name}")
     return writer.write(samples)
 
 
-def sndwrite_chunked(sr: int, outfile: str, encoding: str='auto') -> SndWriter:
+def sndwrite_chunked(outfile:str, sr: int, encoding: str='auto',
+                     metadata: Dict[str, str]=None) -> SndWriter:
     """
     Opens a file for writing and returns a SndWriter
 
     The :meth:`~SndWriter.write` method of the returned :class:`SndWriter` can be
     called to write samples to the file
 
-    Not all file formats support all encodings. Throws a SndfileError
-    if the format does not support the given encoding.
-    If set to 'auto', an encoding will be selected based on the
-    file-format and on the data. The bitdepth of the data is
+    Raises SndfileError if the format does not support the given encoding.
+
+    Not all file formats support all encodings. If set to 'auto', an encoding will
+    be selected based on the file-format and on the data. The bitdepth of the data is
     measured, and if the file-format supports it, it will be used.
     For bitdepths of 8, 16 and 24 bits, a PCM encoding will be used.
     For a bitdepth of 32 bits, a FLOAT encoding will be used,
     or the next lower supported encoding
 
     Args:
-        sr: Sampling-rate
         outfile: The name of the outfile. the extension will determine the file-format.
             The formats supported depend on the available backends.
+        sr: Sampling-rate
         encoding: one of 'auto', 'pcm16', 'pcm24', 'pcm32', 'float32'.
+        metadata: a dict ``{str:str}`` with possible keys: 'comment', 'title', 'artist',
+            'album', 'tracknumber'
 
+    Returns:
+        a :class:`~sndfileio.SndWriter`, whose method :meth:`~sndfileio.SndWriter.write` can
+        be called to write samples
 
     Example
     ~~~~~~~
 
-        >>> with sndwrite_chunked(44100, "out.flac") as writer:
+        >>> with sndwrite_chunked("out.flac", 44100) as writer:
         ...     for buf in sndread_chunked("in.flac"):
         ...         # do some processing, like changing the gain
         ...         buf *= 0.5
@@ -305,7 +343,7 @@ def sndwrite_chunked(sr: int, outfile: str, encoding: str='auto') -> SndWriter:
         raise SndfileError("No backend found to support the given format")
     backend = min(backends, key=lambda backend:backend.priority)
     logger.debug(f"sndwrite_chunked: using backend {backend.name}")
-    return backend.writer(sr, outfile, encoding)
+    return backend.writer(sr, outfile, encoding, metadata=metadata)
 
 
 def asmono(samples:np.ndarray, channel:Union[int, str]=0) -> np.ndarray:
@@ -392,7 +430,8 @@ def bitdepth(data:np.ndarray, snap:bool=True) -> int:
     return maxbits
 
 
-def sndwrite_like(samples:np.ndarray, likefile:str, outfile:str, sr:int=None) -> None:
+def sndwrite_like(samples:np.ndarray, likefile:str, outfile:str, sr:int=None,
+                  metadata: Dict[str, str]=None) -> None:
     """
     Write samples to outfile with samplerate/encoding taken from likefile
 
@@ -401,6 +440,7 @@ def sndwrite_like(samples:np.ndarray, likefile:str, outfile:str, sr:int=None) ->
         likefile: the file to use as a reference for sr, format and encoding
         outfile: the file to write to
         sr: sample rate can be overridden
+        metadata: a dict {str:str}, overrides metadata in `likefile`.
 
 
     Example
@@ -419,10 +459,13 @@ def sndwrite_like(samples:np.ndarray, likefile:str, outfile:str, sr:int=None) ->
 
     """
     info = sndinfo(likefile)
-    sndwrite(samples, sr or info.samplerate, outfile, encoding=info.encoding)
+    sndwrite(outfile=outfile, samples=samples, sr=sr or info.samplerate,
+             encoding=info.encoding, metadata=metadata or info.metadata)
 
 
-def sndwrite_chunked_like(likefile:str, outfile:str, sr:int=None) -> SndWriter:
+def sndwrite_chunked_like(likefile:str, outfile:str, sr:int=None,
+                          metadata: Dict[str, str] = None
+                          ) -> SndWriter:
     """
     Create a SndWriter with samplerate/format/encoding of the
     source file
@@ -431,13 +474,15 @@ def sndwrite_chunked_like(likefile:str, outfile:str, sr:int=None) -> SndWriter:
         likefile: the file to use as reference
         outfile: the file to open for writing
         sr: samplerate can be overridden
+        metadata: a dict {str:str}, overrides metadata in `likefile`.
 
     Returns:
         a :class:`SndWriter`. Call :meth:`~SndWriter.write` on it to write to
         the file
     """
     info = sndinfo(likefile)
-    return sndwrite_chunked(sr or info.samplerate, outfile, info.encoding)
+    return sndwrite_chunked(outfile=outfile, sr=sr or info.samplerate,
+                            encoding=info.encoding, metadata=metadata or info.metadata)
 
 
 ############################################
@@ -446,17 +491,32 @@ def sndwrite_chunked_like(likefile:str, outfile:str, sr:int=None) -> SndWriter:
 #
 ############################################
 
+def _asbytes(s: Union[str, bytes]) -> bytes:
+    if isinstance(s, bytes):
+        return s
+    return s.encode('ascii')
+
 
 class _PySndfileWriter(SndWriter):
+    _keyTable = {
+        'comment': 'SF_STR_COMMENT',
+        'title': 'SF_STR_TITLE',
+        'artist': 'SF_STR_ARTIST',
+        'album': 'SF_STR_ALBUM',
+        'tracknumber': 'SF_STR_TRACKNUMBER',
+    }
 
     def _openFile(self, channels:int) -> None:
         major = _os.path.splitext(self.outfile)[1]
         if major not in self.filetypes:
             raise ValueError("Format %s not supported by this backend" % major)
         ext = _os.path.splitext(self.outfile)[1]
-        sndformat = self._parent._getSndfileFormat(ext, self.encoding)
-        print(f"opening file with {channels} channels")
+        sndformat = self._backend._getSndfileFormat(ext, self.encoding)
         self._file = pysndfile.PySndfile(self.outfile, "w", sndformat, channels, self.sr)
+        if self.metadata:
+            for k, v in self.metadata.items():
+                key = self._keyTable[k]
+                self._file.set_string(key, _asbytes(v))
 
     def write(self, frames:np.ndarray) -> None:
         if self._file:
@@ -483,13 +543,15 @@ class Backend:
                  encodings: List[str],
                  can_read_chunked:bool,
                  can_write_chunked:bool,
-                 name:str):
+                 name:str,
+                 supports_metadata:bool):
         self.priority = priority
         self.filetypes = filetypes
         self.filetypes_write = filetypes_write
         self.encodings = encodings
         self.can_read_chunked = can_read_chunked
         self.can_write_chunked = can_write_chunked
+        self.supports_metadata = supports_metadata
         self.name = name
         self._backend = None
         self._writer: Opt[Type[SndWriter]] = None
@@ -509,11 +571,21 @@ class Backend:
         """ Is this backend available? """
         return _isPackageInstalled(self.name)
 
-    def writer(self, sr:int, outfile:str, encoding:str) -> SndWriter:
-        """ Open outfile for write with the given properties """
+    def writer(self, sr:int, outfile:str, encoding:str, metadata: Dict[str, str]=None) -> SndWriter:
+        """ Open outfile for write with the given properties 
+
+        Args:
+            sr: samplerate
+            outfile: the file to write
+            encoding: the encoding used (pcm16, float32, etc)
+            metadata: if given, a dict str:str. Allowed keys are: xxx
+
+        Returns:
+            a :class:`SndWriter` 
+        """
         if self._writer is None:
             raise SndfileError("This backend does not support writing")
-        return self._writer(self, sr, outfile, encoding)
+        return self._writer(self, sr, outfile, encoding, metadata=metadata)
 
     def check_write(self, outfile:str, encoding:str) -> None:
         """ Check if we can write to outfile with the given encoding """
@@ -546,15 +618,22 @@ class _PySndfile(Backend):
     A backend based in pysndfile
 
     """
+    _keyTable = {'SF_STR_COMMENT': 'comment',
+                 'SF_STR_TITLE': 'title',
+                 'SF_STR_ARTIST': 'artist',
+                 'SF_STR_ALBUM': 'album',
+                 'SF_STR_TRACKNUMBER': 'tracknumber'}
+
     def __init__(self, priority:int):
         super().__init__(
-            priority  = priority,
-            filetypes = ".aif .aiff .wav .flac .ogg .wav64 .caf .raw".split(),
-            filetypes_write = ".aif .aiff .wav .flac .ogg .wav64 .caf .raw".split(),
-            encodings = 'pcm16 pcm24 float32'.split(),
-            can_read_chunked = True,
-            can_write_chunked = True,
-            name = 'pysndfile'
+                priority  = priority,
+                filetypes = ".aif .aiff .wav .flac .ogg .wav64 .caf .raw".split(),
+                filetypes_write = ".aif .aiff .wav .flac .ogg .wav64 .caf .raw".split(),
+                encodings = 'pcm16 pcm24 float32'.split(),
+                can_read_chunked = True,
+                can_write_chunked = True,
+                name = 'pysndfile',
+                supports_metadata= True
         )
         self._writer = _PySndfileWriter
 
@@ -585,8 +664,22 @@ class _PySndfile(Backend):
 
     def getinfo(self, path:str) -> SndInfo:
         snd = pysndfile.PySndfile(path)
+        metadataraw: Dict[str, bytes] = snd.get_strings()
+        if metadataraw:
+            metadata = {}
+            extrainfo = {}
+            for k, v in metadataraw.items():
+                if k not in self._keyTable:
+                    extrainfo[k] = v
+                else:
+                    metadata[self._keyTable[k]] = v
+        else:
+            metadata = None
+            extrainfo = None
+
         return SndInfo(snd.samplerate(), snd.frames(), snd.channels(),
-                       snd.encoding_str(), snd.major_format_str())
+                       snd.encoding_str(), snd.major_format_str(),
+                       metadata=metadata, extrainfo=extrainfo)
 
     def write(self, data:np.ndarray, sr:int, outfile:str, encoding:str) -> None:
         self.check_write(outfile, encoding)
@@ -612,13 +705,14 @@ class _Miniaudio(Backend):
 
     def __init__(self, priority):
         super().__init__(
-            priority=priority,
-            filetypes= ['.mp3'],
-            filetypes_write = ['.mp3'],
-            can_read_chunked = True,
-            can_write_chunked = False,
-            encodings = ['pcm16'],
-            name = 'miniaudio'
+                priority=priority,
+                filetypes= ['.mp3'],
+                filetypes_write = ['.mp3'],
+                can_read_chunked = True,
+                can_write_chunked = False,
+                encodings = ['pcm16'],
+                name = 'miniaudio',
+                supports_metadata=False
         )
 
     def getinfo(self, path:str) -> SndInfo:

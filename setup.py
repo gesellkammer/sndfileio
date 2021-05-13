@@ -2,15 +2,15 @@ from __future__ import print_function
 from setuptools import setup
 import sys, os
 
-version = "1.2.0"
+version = "1.3.0"
 
 
-short_description = "Common API for reading writing soundfiles"
+short_description = "Simple API for reading / writing soundfiles"
 
 if sys.version_info < (3,8):
-    sys.exit('Sorry, Python < 3.8 is not supported')
+    sys.exit('We need python >= 3.8')
 
-# read the contents of your README file
+# read the contents of the README file
 thisdir = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(thisdir, 'README.rst')) as f:
     long_description = f.read()
@@ -25,7 +25,8 @@ setup(
         "pysndfile",
         "miniaudio",
         "nnresample",
-        "numpyx>=0.4.1"],
+        "numpyx>=0.4.1",
+        "tinytag"],
     packages = ["sndfileio"],
     package_data = {'': ['README.rst']},
     include_package_data = True,

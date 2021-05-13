@@ -26,11 +26,9 @@ def mp3read_chunked(path:str, chunksize:int, start:float=0., stop:float=0.
         frames_to_read = info.num_frames - seek_frame
     else:
         frames_to_read = min(info.num_frames, int(sr * stop)) - seek_frame
-    print(f"Frames to read: {frames_to_read}, sr: {sr}")
     assert frames_to_read > 0
     nchannels = info.nchannels
     for buf in miniaudio.mp3_stream_file(path, frames_to_read=chunksize, seek_frame=seek_frame):
-        print(f"{frames_to_read=}")
         samples = np.asarray(buf, dtype=float)
         samples /= 2**15
         if nchannels > 1:
@@ -58,9 +56,20 @@ def mp3read(path: str, start=0., end=0.) -> Sample:
 
 
 def mp3info(path: str) -> SndInfo:
+    import tinytag
     info = miniaudio.mp3_get_file_info(path)
+    m = tinytag.TinyTag.get(path)
+    metadata = {}
+    if m.title: metadata['title'] = m.title
+    if m.album: metadata['album'] = m.album
+    if m.comment: metadata['comment'] = m.comment
+    if m.artist: metadata['artist'] = m.artist
+    if m.track: metadata['tracknumber'] = m.track
+    if not metadata:
+        metadata = None
     return SndInfo(samplerate=info.sample_rate,
                    nframes=info.num_frames,
                    channels=info.nchannels,
                    encoding='pcm16',
-                   fileformat='mp3')
+                   fileformat='mp3',
+                   metadata=metadata)
