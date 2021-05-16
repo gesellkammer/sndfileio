@@ -16,6 +16,7 @@ logger = logging.getLogger("sndfileio")
 __all__ = [
     "sndread",
     "sndread_chunked",
+    "sndget",
     "sndinfo",
     "sndwrite",
     "sndwrite_like",
@@ -29,7 +30,7 @@ __all__ = [
 ]
 
 
-_metadata_possible_keys = {'comment', 'title', 'artist', 'album', 'tracknumber'}
+_metadata_possible_keys = {'comment', 'title', 'artist', 'album', 'tracknumber', 'software'}
 
 _encodings_for_format = {
     'wav': ['pcm16', 'pcm24', 'pcm32', 'float32', 'float64'],
@@ -126,6 +127,7 @@ class SndWriter:
     * artist
     * album
     * tracknumber
+    * software
 
     Example
     =======
@@ -291,6 +293,32 @@ def sndinfo(path:str) -> SndInfo:
     return backend.getinfo(path)
 
 
+def sndget(path:str, start:float=0, end:float=0) -> Tuple[np.ndarray, SndInfo]:
+    """
+    Read a soundfile and its metadata
+
+    Args:
+        path: the path to read
+        start: the time to start reading
+        end: the time to end reading (0=until the end)
+
+    Returns:
+        a tuple (samples: np.ndarray, :class:`SndInfo`)
+
+    Example
+    ~~~~~~~
+
+        # Normalize and save as flac, keeping the metadata
+        >>> from sndfileio import *
+        >>> samples, info = sndget("in.wav")
+        >>> maxvalue = max(samples.max(), -samples.min())
+        >>> samples *= 1/maxvalue
+        >>> sndwrite("out.flac", samples, info.samplerate, metadata=info.metadata)
+    """
+    samples, sr = sndread(path, start=start, end=end)
+    return samples, sndinfo(path)
+
+
 def sndwrite(outfile:str, samples:np.ndarray, sr:int, encoding:str='auto',
              fileformat:str=None, normalize_if_clipping=True,
              metadata: Dict[str, str]=None) -> None:
@@ -310,7 +338,7 @@ def sndwrite(outfile:str, samples:np.ndarray, sr:int, encoding:str='auto',
         normalize_if_clipping: prevent clipping by normalizing samples before
             writing. This only makes sense when writing pcm data
         metadata: a dict of str:str, with possible keys 'title', 'comment', 'artist',
-            'album', 'tracknumber'
+            'album', 'tracknumber', 'software' (the creator of a soundfile)
 
     .. note::
 
@@ -326,7 +354,6 @@ def sndwrite(outfile:str, samples:np.ndarray, sr:int, encoding:str='auto',
     Example
     ~~~~~~~
     ::
-
 
         # Normalize and save as flac
         >>> samples, sr = sndread("sndfile.wav")
@@ -381,7 +408,7 @@ def sndwrite_chunked(outfile:str, sr: int, encoding: str='auto', fileformat:str=
         fileformat: needed only if the format cannot be determined from the extension
             (for example, if saving to an outfile with a non-traditional extension)
         metadata: a dict ``{str:str}`` with possible keys: 'comment', 'title', 'artist',
-            'album', 'tracknumber'
+            'album', 'tracknumber', 'software' (the creator of a soundfile)
 
     Returns:
         a :class:`~sndfileio.SndWriter`, whose method :meth:`~sndfileio.SndWriter.write` can
@@ -489,7 +516,7 @@ def bitdepth(data:np.ndarray, snap:bool=True) -> int:
     return maxbits
 
 
-def sndwrite_like(samples:np.ndarray, likefile:str, outfile:str, sr:int=None,
+def sndwrite_like(outfile:str, samples:np.ndarray, likefile:str, sr:int=None,
                   metadata: Dict[str, str]=None) -> None:
     """
     Write samples to outfile with samplerate/encoding taken from likefile
@@ -563,6 +590,7 @@ class _PySndfileWriter(SndWriter):
         'artist': 'SF_STR_ARTIST',
         'album': 'SF_STR_ALBUM',
         'tracknumber': 'SF_STR_TRACKNUMBER',
+        'software': 'SF_STR_SOFTWARE'
     }
 
     def _open_file(self, channels:int) -> None:
@@ -636,7 +664,7 @@ class Backend:
             encoding: the encoding used (pcm16, float32, etc)
             fileformat: the file format
             metadata: if given, a dict str:str. Allowed keys are: *title*, *comment*,
-                *artist*, *tracknumber*, *album*
+                *artist*, *tracknumber*, *album*, *software*
 
         Returns:
             a :class:`SndWriter` 
@@ -678,7 +706,8 @@ class _PySndfile(Backend):
                  'SF_STR_TITLE': 'title',
                  'SF_STR_ARTIST': 'artist',
                  'SF_STR_ALBUM': 'album',
-                 'SF_STR_TRACKNUMBER': 'tracknumber'}
+                 'SF_STR_TRACKNUMBER': 'tracknumber',
+                 'SF_STR_SOFTWARE': 'software'}
 
     def __init__(self, priority:int):
         super().__init__(
@@ -765,14 +794,18 @@ class _PySndfile(Backend):
         fmt = f"{fmt}{bits}"
         return pysndfile.construct_format(fileformat, fmt)
 
+    def detect_format(self, path:str) -> Opt[str]:
+        f = pysndfile.PySndfile(path)
+        return pysndfile.fileformat_id_to_name.get(f.format())
+
 
 class _Miniaudio(Backend):
 
     def __init__(self, priority):
         super().__init__(
                 priority=priority,
-                filetypes= ['.mp3'],
-                filetypes_write = ['.mp3'],
+                filetypes= ['mp3'],
+                filetypes_write = ['mp3'],
                 can_read_chunked = True,
                 can_write_chunked = False,
                 name = 'miniaudio',
@@ -801,6 +834,7 @@ class _Miniaudio(Backend):
                                                      start=start, stop=stop)
         else:
             raise FormatNotSupported(f"This backend does not support {ext} format")
+
 
 
 BACKENDS: List[Backend] = [
@@ -876,6 +910,17 @@ def _get_backends() -> List[Backend]:
     return backends
 
 
+def _detect_format(path:str) -> Opt[str]:
+    ext = _os.path.splitext(path)[1][1:].lower() if path else None
+    if ext in _known_fileformats:
+        return ext
+    import filetype
+    ext = filetype.guess_extension(path)
+    if ext in _known_fileformats:
+        return ext
+    return None
+
+
 def _get_backend(path:str=None, key:Callable[[Backend], bool]=None) -> Opt[Backend]:
     """
     Get available backends to read/write the file given
@@ -890,14 +935,15 @@ def _get_backend(path:str=None, key:Callable[[Backend], bool]=None) -> Opt[Backe
     ::
 
         # Get available backends which can read in chunks
-        >>> backend = _get_backend('file.flac', key=lambda backend:backend.can_read_chunked())
+        >>> backend = _get_backend('file.flac',
+        ...                        key=lambda backend:backend.can_read_chunked())
     """
-    ext = _os.path.splitext(path)[1].lower() if path else None
+    filetype = _detect_format(path)
     backends = _get_backends()
     if key:
         backends = [b for b in backends if key(b)]
-    if ext:
-        backends = [b for b in backends if ext in b.filetypes]
+    if filetype:
+        backends = [b for b in backends if filetype in b.filetypes]
     if backends:
         return min(backends, key=lambda backend: backend.priority)
     return None
