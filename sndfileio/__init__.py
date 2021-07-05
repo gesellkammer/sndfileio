@@ -84,7 +84,6 @@ Examples
 
 from .sndfileio import *
 from .resampling import resample
-from .util import numchannels
-from . import dsp
+from . import util
 
 del resampling

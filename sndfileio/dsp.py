@@ -3,7 +3,6 @@ Helper functions for doing simple dsp filtering
 """
 
 from __future__ import annotations
-from scipy import signal
 import numpy as np
 import warnings
 from typing import Tuple, Sequence as Seq, Union
@@ -33,6 +32,7 @@ def lowpass_cheby(samples:np.ndarray, freq:float, sr:int, maxorder=12) -> np.nda
     if freq > sr*0.5:
         raise ValueError("Can't filter freq. above nyquist")
     b, a, freq_passband = lowpass_cheby2_coeffs(freq, sr, maxorder)
+    from scipy import signal
     return signal.lfilter(b, a, samples)
 
 
@@ -48,7 +48,7 @@ def lowpass_cheby2_coeffs(freq:float, sr:int, maxorder=12
     Returns:
          a tuple (b coeffs, a coeffs, freq_passband)
     """
-    
+    from scipy import signal
     nyquist = sr * 0.5
     # rp - maximum ripple of passband, rs - attenuation of stopband
     rp, rs, order = 1, 96, 1e99
@@ -88,16 +88,17 @@ def filter_butter_coeffs(filtertype:str,
 
     """
     assert filtertype in ('low', 'high', 'band')
+    from scipy import signal
     nyq = 0.5*sr
     if isinstance(freq, tuple):
         assert filtertype == 'band'
         low, high = freq
         low  /= nyq
         high /= nyq
-        b, a = signal.butter(order, [low, high], btype='band')
+        b, a = signal.butter(order, [low, high], btype='band', output='ba')
     else:
         freq = freq / nyq
-        b, a = signal.butter(order, freq, btype=filtertype)
+        b, a = signal.butter(order, freq, btype=filtertype, output='ba')
     return b, a
 
 
@@ -120,6 +121,7 @@ def filter_butter(samples: np.ndarray, sr:int, filtertype:str, freq:float, order
     
         calls filter_butter_coeffs to calculate the coefficients
     """
+    from scipy import signal
     assert filtertype in ('low', 'high', 'band')
     b, a = filter_butter_coeffs(filtertype, freq, sr, order=order)
     return apply_multichannel(samples, lambda data:signal.lfilter(b, a, data))
@@ -134,6 +136,7 @@ def filter_butter_plot_freqresponse(b:Seq[float], a:Seq[float],
     .. seealso:: filter_butter_coeffs
 
     """
+    from scipy import signal
     try:
         import matplotlib.pyplot as plt
     except ImportError:

@@ -1,6 +1,5 @@
 numpy
 scipy
-cython
 pysndfile
 miniaudio
 nnresample

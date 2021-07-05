@@ -1,10 +1,14 @@
-from .datastructs import SndInfo, Sample
+from __future__ import annotations
+from .datastructs import SndInfo
 from typing import Iterator
 import numpy as np 
 import miniaudio
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .datastructs import sample_t
+    from typing import Iterator
 
-
-def _readfragment(path:str, start:float, end:float) -> Sample:
+def _readfragment(path:str, start:float, end:float) -> sample_t:
     info = miniaudio.mp3_get_file_info(path)
     seek_frame = int(start * info.sample_rate)
     if end == 0:
@@ -14,7 +18,7 @@ def _readfragment(path:str, start:float, end:float) -> Sample:
     buf = next(miniaudio.mp3_stream_file(path, frames_to_read=frames_to_read, seek_frame=seek_frame))
     samples = np.asarray(buf, dtype=float)
     samples /= 2**15
-    return Sample(samples, info.sample_rate)
+    return samples, info.sample_rate
 
 
 def mp3read_chunked(path:str, chunksize:int, start:float=0., stop:float=0.
@@ -42,7 +46,7 @@ def mp3read_chunked(path:str, chunksize:int, start:float=0., stop:float=0.
             frames_to_read -= len(samples)
 
 
-def mp3read(path: str, start=0., end=0.) -> Sample:
+def mp3read(path: str, start=0., end=0.) -> sample_t:
     """
     Reads a mp3 files completely into an array
     """
@@ -52,7 +56,7 @@ def mp3read(path: str, start=0., end=0.) -> Sample:
     npsamples = np.frombuffer(decoded.samples, dtype='float32').astype(float)
     if decoded.nchannels > 1:
         npsamples.shape = (decoded.num_frames, decoded.nchannels)
-    return Sample(npsamples, decoded.sample_rate)
+    return npsamples, decoded.sample_rate
 
 
 def mp3info(path: str) -> SndInfo:

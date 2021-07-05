@@ -1,10 +1,12 @@
-from __future__ import division
+from __future__ import annotations
 import scipy.signal as sig
 import numpy as np
 from .dsp import lowpass_cheby
-from typing import List, Optional as Opt, Callable
 import logging
 from math import gcd
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import List, Optional as Opt, Callable
 
 
 class BackendNotAvailable(Exception):
@@ -12,6 +14,7 @@ class BackendNotAvailable(Exception):
 
 
 logger = logging.getLogger("sndfileio")
+
 
 def _applyMultichan(samples: np.ndarray,
                     func: Callable[[np.ndarray], np.ndarray]) -> np.ndarray:
