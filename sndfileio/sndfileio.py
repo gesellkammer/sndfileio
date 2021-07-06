@@ -24,9 +24,9 @@ __all__ = [
     "sndwrite_like",
     "sndwrite_chunked",
     "sndwrite_chunked_like",
+    "mp3write",
     "SndInfo",
-    "SndWriter",
-    "mp3write"
+    "SndWriter"
 ]
 
 
@@ -60,7 +60,7 @@ def sndread(path:str, start:float=0, end:float=0) -> sample_t:
     Example
     ~~~~~~~
 
-    .. code::
+    ::
 
         # Normalize and save as flac
         from sndfileio import sndread, sndwrite
@@ -153,41 +153,36 @@ def sndget(path:str, start:float=0, end:float=0) -> Tuple[np.ndarray, SndInfo]:
 
     Example
     ~~~~~~~
+    ::
 
         # Normalize and save as flac, keeping the metadata
-        >>> from sndfileio import *
-        >>> samples, info = sndget("in.wav")
-        >>> maxvalue = max(samples.max(), -samples.min())
-        >>> samples *= 1/maxvalue
-        >>> sndwrite("out.flac", samples, info.samplerate, metadata=info.metadata)
-    """
-    samples, sr = sndread(path, start=start, end=end)
-    return samples, sndinfo(path)
-
-
-def mp3write(outfile:str, samples:np.ndarray, sr:int, bitrate=224, quality=3) -> None:
-    """
-    Write all samples to outfile as mp3
-
-    Args:
-        outfile: the outfile to write to
-        samples: the samples to write (float samples in the range -1:1). They will
-            be converted to int16 so any values outside the given range will clip
-        sr: the samplerate
-        bitrate: the bitrate to use, in Kb/s
-        quality: the quality, a value between 1-7 (where 1 is highest and 7 is fastest)
-
-    .. note::
-        To write samples in chunks use sndwrite_chunked. `bitrate` and `quality` can
-        be passed as **options.
+        from sndfileio import *
+        samples, info = sndget("in.wav")
+        maxvalue = max(samples.max(), -samples.min())
+        samples *= 1/maxvalue
+        sndwrite("out.flac", samples, info.samplerate, metadata=info.metadata)
 
     """
-    mp3backend = _BACKENDS['lameenc']
-    if not mp3backend.is_available():
-        raise RuntimeError("lameenc backend is not available")
-    writer = mp3backend.writer(outfile=outfile, sr=sr, encoding='pcm16', fileformat='mp3',
-                               bitrate=bitrate, quality=quality)
-    writer.write(samples)
+    backend = _get_backend(path)
+    if not backend:
+        raise RuntimeError(f"No backend available to read {path}")
+    logger.debug(f"sndread: using backend {backend.name}")
+    return backend.read_with_info(path, start=start, end=end)
+
+
+def _resolve_encoding(outfile:str, fileformat:Opt[str], encoding:Opt[str],
+                      samples:Opt[np.ndarray]=None
+                      ) -> Tuple[str, str]:
+    if not fileformat:
+        fileformat = util.fileformat_from_ext(_os.path.splitext(outfile)[1])
+    if encoding == 'auto':
+        if samples:
+            encoding = util.guess_encoding(samples, fileformat)
+        else:
+            encoding = util.default_encoding(fileformat)
+    elif encoding == 'default' or encoding is None:
+        encoding = util.default_encoding(fileformat)
+    return fileformat, encoding
 
 
 def sndwrite(outfile:str, samples:np.ndarray, sr:int, encoding:str='default',
@@ -213,9 +208,14 @@ def sndwrite(outfile:str, samples:np.ndarray, sr:int, encoding:str='default',
         metadata: a dict of str:str, with possible keys 'title', 'comment', 'artist',
             'album', 'tracknumber', 'software' (the creator of a soundfile)
         options: available options depend on the fileformat.
-            For mp3, options are: bitrate (int, default=160) and quality (1-7, where
-            1 is highest and 7 is fastest, default=3)
-            For lossless formats, like wav, aif, flac, etc., there are no extra options
+
+    .. admonition:: Options
+
+        **mp3**:
+            - `bitrate`: bitrate in Kb/s (int, default=160)
+            - `quality`: 1-7, 1 is highest and 7 is fastest, default=3
+
+        For lossless formats, like `wav`, `aif`, `flac`, etc., **there are no extra options**
 
     .. note::
 
@@ -251,12 +251,8 @@ def sndwrite(outfile:str, samples:np.ndarray, sr:int, encoding:str='default',
         >>> sndwrite("out.flac", samples, sr)
 
     """
-    if not fileformat:
-        fileformat = util.fileformat_from_ext(_os.path.splitext(outfile)[1])
-    if encoding == 'auto':
-        encoding = util.guess_encoding(samples, fileformat)
-    elif encoding == 'default' or encoding is None:
-        encoding = util.default_encoding(fileformat)
+    fileformat, encoding = _resolve_encoding(outfile, samples=samples, fileformat=fileformat,
+                                             encoding=encoding)
     if encoding.startswith('pcm') and normalize_if_clipping:
         clipping = ((samples > 1).any() or (samples < -1).any())
         if clipping:
@@ -312,16 +308,22 @@ def sndwrite_chunked(outfile:str, sr: int, encoding: str='auto', fileformat:str=
     Example
     ~~~~~~~
 
-        >>> with sndwrite_chunked("out.flac", 44100) as writer:
-        ...     for buf in sndread_chunked("in.flac"):
-        ...         # do some processing, like changing the gain
-        ...         buf *= 0.5
-        ...         writer.write(buf)
+    ::
+
+        from snfileio import *
+        with sndwrite_chunked("out.flac", 44100) as writer:
+            for buf in sndread_chunked("in.flac"):
+                # do some processing, like changing the gain
+                buf *= 0.5
+                writer.write(buf)
 
     """
-    backends = [backend for backend in _get_backends() if backend.can_write_chunked]
+    fileformat, encoding = _resolve_encoding(outfile, fileformat=fileformat,
+                                             encoding=encoding)
+    backends = [backend for backend in _get_backends()
+                if backend.can_write_chunked and fileformat in backend.filetypes_write]
     if not backends:
-        raise SndfileError("No backend found to support the given format")
+        raise SndfileError(f"No backend found to support the format {fileformat}")
     backend = min(backends, key=lambda backend:backend.priority)
     logger.debug(f"sndwrite_chunked: using backend {backend.name}")
     return backend.writer(outfile, sr, encoding, metadata=metadata, fileformat=fileformat,
@@ -331,23 +333,33 @@ def sndwrite_chunked(outfile:str, sr: int, encoding: str='auto', fileformat:str=
 def sndwrite_like(outfile:str, samples:np.ndarray, likefile:str, sr:int=None,
                   metadata: Dict[str, str]=None) -> None:
     """
-    Write samples to outfile with samplerate/encoding taken from likefile
+    Write samples to outfile with samplerate/fileformat/encoding taken from likefile
 
     Args:
+        outfile: the file to write to
         samples: the samples to write
         likefile: the file to use as a reference for sr, format and encoding
-        outfile: the file to write to
         sr: sample rate can be overridden
-        metadata: a dict {str:str}, overrides metadata in `likefile`.
+        metadata: a dict {str:str}, overrides metadata in `likefile`. Metadata
+            is not merged, so if metadata is given, it substitutes the metadata
+            in `likefile` completely. In order to merge it, do that beforehand
+            If None is passed, the metadata in `likefile` is written to `outfile`
 
+    .. note::
+
+        The fileformat is always determined by `likefile`, even if the extension
+        of `outfile` would result in a different format. For example, if `likefile`
+        has a flac format but outfile has a .wav extension, the resulting file will
+        be written in flac format.
 
     Example
     ~~~~~~~
 
-    .. code-block:: python
+    ::
 
         # Read a file, apply a fade-in of 0.5 seconds, save it
         import numpy as np
+        from sndfileio import *
         samples, sr = sndread("stereo.wav")
         fadesize = int(0.5*sr)
         ramp = np.linspace(0, 1, fadesize))
@@ -357,11 +369,17 @@ def sndwrite_like(outfile:str, samples:np.ndarray, likefile:str, sr:int=None,
 
     """
     info = sndinfo(likefile)
+    ext = _os.path.splitext(outfile)[1]
+    outfileformat = util.fileformat_from_ext(ext)
+    if outfileformat != info.fileformat:
+        logger.warning(f"Trying to save to a file with extension {ext}, but fileformat"
+                       f"will be {info.fileformat}")
     sndwrite(outfile=outfile, samples=samples, sr=sr or info.samplerate,
-             encoding=info.encoding, metadata=metadata or info.metadata)
+             fileformat=info.fileformat, encoding=info.encoding,
+             metadata=metadata or info.metadata)
 
 
-def sndwrite_chunked_like(likefile:str, outfile:str, sr:int=None,
+def sndwrite_chunked_like(outfile:str, likefile:str, sr:int=None,
                           metadata: Dict[str, str] = None
                           ) -> SndWriter:
     """
@@ -369,10 +387,13 @@ def sndwrite_chunked_like(likefile:str, outfile:str, sr:int=None,
     source file
 
     Args:
-        likefile: the file to use as reference
         outfile: the file to open for writing
+        likefile: the file to use as reference
         sr: samplerate can be overridden
-        metadata: a dict {str:str}, overrides metadata in `likefile`.
+        metadata: a dict {str:str}, overrides metadata in `likefile`. Metadata
+            is not merged, so if metadata is given, it substitutes the metadata
+            in `likefile` completely. In order to merge it, do that beforehand
+            If None is passed, the metadata in `likefile` is written to `outfile`
 
     Returns:
         a :class:`SndWriter`. Call :meth:`~SndWriter.write` on it to write to
@@ -381,6 +402,38 @@ def sndwrite_chunked_like(likefile:str, outfile:str, sr:int=None,
     info = sndinfo(likefile)
     return sndwrite_chunked(outfile=outfile, sr=sr or info.samplerate,
                             encoding=info.encoding, metadata=metadata or info.metadata)
+
+
+def mp3write(outfile:str, samples:np.ndarray, sr:int, bitrate=224, quality=3) -> None:
+    """
+    Write all samples to outfile as mp3
+
+    This is the same as::
+
+        sndwrite(outfile, samples, sr, bitrate=224, quality=3)
+
+    But in this case the arguments are explictely listed instead of being part of
+    ``**options``
+
+    Args:
+        outfile: the outfile to write to
+        samples: the samples to write (float samples in the range -1:1). They will
+            be converted to int16 so any values outside the given range will clip
+        sr: the samplerate
+        bitrate: the bitrate to use, in Kb/s
+        quality: the quality, a value between 1-7 (where 1 is highest and 7 is fastest)
+
+    .. note::
+        To write samples in chunks use sndwrite_chunked. `bitrate` and `quality` can
+        be passed as **options.
+
+    """
+    mp3backend = _BACKENDS['lameenc']
+    if not mp3backend.is_available():
+        raise RuntimeError("lameenc backend is not available")
+    writer = mp3backend.writer(outfile=outfile, sr=sr, encoding='pcm16', fileformat='mp3',
+                               bitrate=bitrate, quality=quality)
+    writer.write(samples)
 
 
 ############################################
@@ -451,8 +504,12 @@ class Backend:
         self._backend = None
         self._writer: Opt[Type[SndWriter]] = None
 
-    def read(self, path:str, start:float=0, end:float=0) -> sample_t:
+    def read_with_info(self, path:str, start:float=0,end:float=0) -> Tuple[np.ndarray, SndInfo]:
         return NotImplemented
+
+    def read(self, path:str, start:float=0, end:float=0) -> sample_t:
+        samples, info = self.read_with_info(path=path, start=start, end=end)
+        return samples, info.samplerate
 
     def read_chunked(self, path:str, chunksize:int=2048, start:float=0., stop:float=0.
                      ) -> Iterator[np.ndarray]:
@@ -536,6 +593,7 @@ class _Lameenc(Backend):
                                              quality=quality)
 
 
+
 class _PySndfile(Backend):
     """
     A backend based in pysndfile
@@ -561,14 +619,19 @@ class _PySndfile(Backend):
         )
         self._writer = _PySndfileWriter
 
-    def read(self, path:str, start:float=0, end:float=0) -> sample_t:
+    def read_with_info(self, path: str, start:float=0, end:float=0) -> Tuple[np.ndarray, SndInfo]:
         snd = _pysndfile.PySndfile(path)
+        info = self._getinfo(snd)
+        samples = self._read(snd, start=start, end=end)
+        return samples, info
+
+    def _read(self, snd: _pysndfile.PySndfile, start:float=0, end:float=0) -> np.ndarray:
         sr: int = snd.samplerate()
         samp_start = int(start * sr)
         samp_end = int(end * sr) if end > 0 else snd.frames()
         if samp_start:
             snd.seek(samp_start)
-        return (snd.read_frames(samp_end - samp_start), sr)
+        return snd.read_frames(samp_end - samp_start)
 
     def read_chunked(self, path:str, chunksize:int=2048, start:float=0., stop:float=0.
                      ) -> Iterator[np.ndarray]:
@@ -581,8 +644,10 @@ class _PySndfile(Backend):
         for pos, nframes in util.chunks(0, lastframe - firstframe, chunksize):
             yield snd.read_frames(nframes)
 
-    def getinfo(self, path:str) -> SndInfo:
-        snd = _pysndfile.PySndfile(path)
+    def getinfo(self, path: str) -> SndInfo:
+        return self._getinfo(_pysndfile.PySndfile(path))
+
+    def _getinfo(self, snd: _pysndfile.PySndfile) -> SndInfo:
         metadataraw: Dict[str, bytes] = snd.get_strings()
         if metadataraw:
             metadata, extrainfo = {}, {}
@@ -647,24 +712,19 @@ class _Miniaudio(Backend):
         )
 
     def getinfo(self, path:str) -> SndInfo:
-        ext = _os.path.splitext(path)[1].lower()
-        if ext != '.mp3':
-            raise FormatNotSupported(f"format {ext} is not supported")
         from . import backend_miniaudio
         return backend_miniaudio.mp3info(path)
 
+    def read_with_info(self, path:str, start:float=0,end:float=0) -> Tuple[np.ndarray, SndInfo]:
+        from . import backend_miniaudio
+        return backend_miniaudio.mp3read(path, start, end)[0], backend_miniaudio.mp3info(path)
+
     def read(self, path: str, start:float=0., end:float=0.) -> sample_t:
-        ext = _os.path.splitext(path)[1].lower()
-        if ext != '.mp3':
-            raise FormatNotSupported(f"format {ext} is not supported")
         from . import backend_miniaudio
         return backend_miniaudio.mp3read(path, start=start, end=end)
 
     def read_chunked(self, path:str, chunksize:int=2048, start:float=0., stop:float=0.
                      ) -> Iterator[np.ndarray]:
-        ext = _os.path.splitext(path)[1].lower()
-        if ext != '.mp3':
-            raise FormatNotSupported(f"format {ext} is not supported")
         from . import backend_miniaudio
         return backend_miniaudio.mp3read_chunked(path, chunksize=chunksize,
                                                      start=start, stop=stop)

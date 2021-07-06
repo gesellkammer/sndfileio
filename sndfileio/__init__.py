@@ -1,17 +1,10 @@
 """
-*********
-SNDFILEIO
-*********
 
-A simple module providing a unified API to read and write sound-files to and from
-numpy arrays. If no extra modules are installed, it uses only standard modules
-and numpy to read and write uncompressed formats (WAV, AIFF).
+This package providesa unified API to read and write sound-files to and from
+numpy arrays. It can read and write to `wav`, `aif`, `flac`, `mp3` and
+all loss-less formats supported by `libsndfile`.
 
-Backends
-********
-
-* PySndfile (supports wav, aif, flac, ogg, etc., https://pypi.org/project/pysndfile/)
-* miniaudio (for mp3 support, https://pypi.org/project/miniaudio/)
+--------------------------------------------------
 
 API
 ****
@@ -19,40 +12,56 @@ API
 Read / write a file in one function.
 
 :func:`sndinfo<sndfileio.sndinfo>`
-----------------------------------
+==================================
 
     Returns a :class:`SndInfo` with all the information of the sound-file
 
 :func:`sndread<sndfileio.sndread>`
-----------------------------------
+==================================
 
     Reads ALL the samples. Returns a tuple (data, samplerate)
 
 :func:`sndwrite<sndfileio.sndwrite>`
-------------------------------------
+====================================
 
     Write samples to outfile
 
 :func:`sndwrite_like<sndfileio.sndwrite_like>`
-----------------------------------------------
+==============================================
 
     Write samples to outfile cloning another files format & encoding
 
 
+:func:`sndget<sndfileio.sndget>`
+==================================
+
+    Reads the sample data, returns a tuple (**samples**, **info**), where
+    `info` is a :class:`SndInfo` with all the information of the sound-file
+
+-----------------------------
+
+
+==========
 Chunked IO
-----------
+==========
 
 It is possible to stream a soundfile by reading and processing chunks. This
 is helpful in order to avoid allocating memory for a large. The same is possible
 for writing
 
-:func:`sndread_chunked<sndfileio.sndead_chunked>`
+:func:`sndread_chunked<sndfileio.sndread_chunked>`
+==================================================
 
-    returns a generator yielding chunks of frames
+    Returns a generator yielding chunks of frames
 
 :func:`sndwrite_chunked<sndfileio.sndwrite_chunked>`
-    opens the file for writing. Returns a :class:`SndWriter`. To write to the file,
+====================================================
+
+    Opens the file for writing. Returns a :class:`SndWriter`. To write to the file,
     call :meth:`write` on the returned handle
+
+
+---------
 
 
 Examples

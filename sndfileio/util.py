@@ -30,7 +30,6 @@ _default_encoding = {
 metadata_possible_keys = {'comment', 'title', 'artist', 'album', 'tracknumber', 'software'}
 
 
-
 known_fileformats = encodings_for_format.keys()
 
 
@@ -52,7 +51,7 @@ def getchannel(samples: np.ndarray, channel:int) -> np.ndarray:
         # Read a stereo file, atenuate one channel
         >>> from sndfileio import *
         >>> stereosamples, sr = sndread("stereo.wav")
-        >>> ch0 = getchannel(stereosamples, 0)
+        >>> ch0 = util.getchannel(stereosamples, 0)
         >>> ch0 *= 0.5
         >>> sndwrite_like("out.wav", stereosamples, likefile="stereo.wav")
 
