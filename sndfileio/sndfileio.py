@@ -601,6 +601,9 @@ class _SoundfileWriter(SndWriter):
         fmt, subtype = _Soundfile.get_format_and_subtype(self.fileformat, self.encoding)
         self._file = _soundfile.SoundFile(self.outfile, "w", format=fmt, subtype=subtype,
                                           channels=channels, samplerate=self.sr)
+        if self.metadata:
+            for key, value in self.metadata.items():
+                setattr(self._file, key, value)
 
     def write(self, frames:np.ndarray) -> None:
         if not self._file:
@@ -652,6 +655,10 @@ class _Soundfile(Backend):
         'FLAC': 'flac',
     }
 
+    # 'comment', 'title', 'artist',
+    #             'album', 'tracknumber', 'software'
+    metadata_keys = {'comment', 'title', 'artist', 'album', 'tracknumber', 'software'}
+
     def __init__(self, priority:int):
         super().__init__(
                 priority = priority,
@@ -695,12 +702,18 @@ class _Soundfile(Backend):
     def _getinfo(self, snd: _soundfile.SoundFile) -> SndInfo:
         encoding = _Soundfile.subtype_to_encoding[snd.subtype]
         fileformat = _Soundfile.format_to_fileformat[snd.format]
+        metadata = {}
+        for key in self.metadata_keys:
+            value = getattr(snd, key, None)
+            if value:
+                metadata[key] = value
+
         return SndInfo(samplerate=snd.samplerate,
                        nframes=snd.frames,
                        channels=snd.channels,
                        encoding=encoding,
                        fileformat=fileformat,
-                       metadata={})
+                       metadata=metadata)
 
     @staticmethod
     def get_format_and_subtype(fmt:str, encoding:str=None) -> Tuple[str, str]:
@@ -716,20 +729,6 @@ class _Soundfile(Backend):
         if not subformat:
             raise ValueError(f"Encoding {encoding} not supported for {fmt}")
         return soundfile_fmt, subformat
-
-    def write(self, data: np.ndarray, sr: int, outfile: str, encoding: str, fmt: str=None
-              ) -> None:
-        assert data.dtype == 'float64'
-        ext = _os.path.splitext(outfile)[1].lower()
-        assert ext[0] == "."
-        if fmt is None:
-            fmt = ext[1:]
-        self.check_write(fmt, encoding)
-        _fmt, _subfmt = self.get_format_and_subtype(fmt, encoding)
-        snd = _soundfile.SoundFile(outfile, mode='w',
-                                   format=_fmt, subtype=_subfmt,
-                                   channels=util.numchannels(data), samplerate=sr)
-        snd.write(data)
 
 
 class _PySndfile(Backend):
@@ -803,15 +802,6 @@ class _PySndfile(Backend):
         return SndInfo(snd.samplerate(), snd.frames(), snd.channels(),
                        snd.encoding_str(), snd.major_format_str(),
                        metadata=metadata, extrainfo=extrainfo)
-
-    def write(self, data:np.ndarray, sr:int, outfile:str, encoding:str) -> None:
-        self.check_write(outfile, encoding)
-        ext = _os.path.splitext(outfile)[1].lower()
-        fmt = self.get_sndfile_format(ext, encoding)
-        snd = self.pysndfile.PySndfile(outfile, mode='w', format=fmt,
-                                       channels=util.numchannels(data), samplerate=sr)
-        snd.write_frames(data)
-        snd.writeSync()
 
     def get_sndfile_format(self, fileformat: str, encoding: str) -> int:
         """
