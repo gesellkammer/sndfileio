@@ -2,11 +2,17 @@ from .datastructs import SndInfo
 import pydub
 import time
 import numpy as np
+from typing import Tuple
+
 
 _cache = {}
 
 
 def _audiosegment(path:str, timeout=10) -> pydub.AudioSegment:
+    """
+    Args:
+        timeout: the time (in seconds) this audiosegment is cached
+    """
     if path in _cache:
         audiosegment, t = _cache[path]
         if time.time() - t < timeout:
@@ -22,7 +28,7 @@ def mp3info(path:str) -> SndInfo:
                    channels=f.channels, encoding='pcm16', fileformat='mp3')
 
 
-def mp3read(path:str):
+def mp3read(path:str) -> Tuple[np.ndarray, int]:
     """
     Returns a tuple (samples, samplerate) where samples 
     is a numpy array (float, between -1 and 1)

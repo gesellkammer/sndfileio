@@ -80,8 +80,6 @@ Examples
 Installation
 ------------
 
-Make sure that you have ``libsamplerate`` installed.
-
 
 .. code-block:: bash
 
@@ -89,12 +87,15 @@ Make sure that you have ``libsamplerate`` installed.
     pip install sndfileio
     
 
-Dependencies
-------------
+External dependencies
+---------------------
 
--  ``libsamplerate`` (``apt install libsndfile1-dev``)
+-  ``libsndfile`` (``apt install libsndfile1-dev``)
 
-All python dependencies are installed by ``pip``
+.. note::
+
+    In windows and macos all external dependencies are installed automatically
+
 
 License
 -------

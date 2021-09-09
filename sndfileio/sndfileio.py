@@ -3,12 +3,13 @@ import os as _os
 import numpy as np
 from importlib.util import find_spec as _find_spec
 import logging
-import pysndfile as _pysndfile
+import soundfile as _soundfile
 from . import util
 from .datastructs import SndInfo, SndWriter
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
+    import pysndfile as _pysndfile
     from .datastructs import SndWriter, sample_t
     from typing import Dict, Tuple, Union, Iterator, Optional as Opt, List, Callable, Type
 
@@ -557,7 +558,7 @@ class Backend:
 
     def dump(self) -> None:
         """ Dump information about this backend """
-        print(f"Backend: {self.name} (available: {self.is_available}, priority: {self.priority})")
+        print(f"Backend: {self.name} (available: {self.is_available()}, priority: {self.priority})")
         if self.filetypes:
             readtypes = ", ".join(self.filetypes)
             print(f"    read types : {readtypes}")
@@ -593,6 +594,143 @@ class _Lameenc(Backend):
                                              quality=quality)
 
 
+class _SoundfileWriter(SndWriter):
+    def _open_file(self, channels:int) -> None:
+        if self.fileformat not in self.filetypes:
+            raise ValueError(f"Format {self.fileformat} not supported by this backend")
+        fmt, subtype = _Soundfile.get_format_and_subtype(self.fileformat, self.encoding)
+        self._file = _soundfile.SoundFile(self.outfile, "w", format=fmt, subtype=subtype,
+                                          channels=channels, samplerate=self.sr)
+
+    def write(self, frames:np.ndarray) -> None:
+        if not self._file:
+            nchannels = util.numchannels(frames)
+            if self.encoding == 'auto':
+                self.encoding = util.guess_encoding(frames, self.fileformat)
+            elif self.encoding == 'default':
+                self.encoding = util.default_encoding(self.fileformat)
+            self._open_file(nchannels)
+        self._file.write(frames)
+
+    def close(self):
+        if self._file is None:
+            return
+        self._file.close()
+        self._file = None
+
+
+
+
+class _Soundfile(Backend):
+    """
+    A backend based on soundfile (https://pysoundfile.readthedocs.io)
+
+    """
+    # TODO: support metadata (either PR or via
+    #  https://github.com/thebigmunch/audio-metadata)
+    subtype_to_encoding = {
+        'PCM_24': 'pcm24',
+        'PCM_16': 'pcm16',
+        'PCM_32': 'pcm32',
+        'PCM_64': 'pcm64',
+        'FLOAT': 'float32',
+        'DOUBLE': 'float64'
+    }
+
+    encoding_to_subtype = {
+        'pcm24': 'PCM_24',
+        'pcm16': 'PCM_16',
+        'pcm24': 'PCM_24',
+        'float32': 'FLOAT',
+        'float64': 'DOUBLE',
+    }
+
+    format_to_fileformat = {
+        'WAV': 'wav',
+        'WAVEX': 'wav',
+        'AIFF': 'aiff',
+        'FLAC': 'flac',
+    }
+
+    def __init__(self, priority:int):
+        super().__init__(
+                priority = priority,
+                filetypes=["aif", "aiff", "wav", "flac"],
+                filetypes_write=["aif", "aiff", "wav", "flac"],
+                can_read_chunked=True,
+                can_write_chunked=True,
+                name='soundfile',
+                supports_metadata=True
+        )
+        self._writer = _SoundfileWriter
+        
+    def read_with_info(self, path: str, start:float=0, end:float=0) -> Tuple[np.ndarray, SndInfo]:
+        snd = _soundfile.SoundFile(path, 'r')
+        info = self._getinfo(snd)
+        samples = self._read(snd, start=start, end=end)
+        return samples, info
+
+    def _read(self, snd: _soundfile.SoundFile, start:float=0, end:float=0) -> np.ndarray:
+        sr: int = snd.samplerate
+        samp0 = int(start*sr)
+        samp1 = int(end*sr) if end > 0 else snd.frames
+        if samp0:
+            snd.seek(samp0)
+        return snd.read(samp1 - samp0)
+
+    def read_chunked(self, path:str, chunksize:int=2048, start:float=0., stop:float=0.
+                     ) -> Iterator[np.ndarray]:
+        snd = _soundfile.SoundFile(path, 'r')
+        sr = snd.samplerate
+        if start:
+            snd.seek(int(start*snd.samplerate))
+        firstframe = int(sr * start)
+        lastframe = snd.frames if stop == 0 else int(sr*stop)
+        for pos, nframes in util.chunks(0, lastframe - firstframe, chunksize):
+            yield snd.read(nframes)
+
+    def getinfo(self, path:str) -> SndInfo:
+        return self._getinfo(_soundfile.SoundFile(path, 'r'))
+
+    def _getinfo(self, snd: _soundfile.SoundFile) -> SndInfo:
+        encoding = _Soundfile.subtype_to_encoding[snd.subtype]
+        fileformat = _Soundfile.format_to_fileformat[snd.format]
+        return SndInfo(samplerate=snd.samplerate,
+                       nframes=snd.frames,
+                       channels=snd.channels,
+                       encoding=encoding,
+                       fileformat=fileformat,
+                       metadata={})
+
+    @staticmethod
+    def get_format_and_subtype(fmt:str, encoding:str=None) -> Tuple[str, str]:
+        soundfile_fmt = {
+            'wav': 'WAVEX',
+            'aif': 'AIFF',
+            'aiff': 'AIFF',
+            'flac': 'FLAC',
+        }.get(fmt)
+        if not soundfile_fmt:
+            raise ValueError(f"Format {fmt} not supported")
+        subformat = _Soundfile.encoding_to_subtype.get(encoding)
+        if not subformat:
+            raise ValueError(f"Encoding {encoding} not supported for {fmt}")
+        return soundfile_fmt, subformat
+
+    def write(self, data: np.ndarray, sr: int, outfile: str, encoding: str, fmt: str=None
+              ) -> None:
+        assert data.dtype == 'float64'
+        ext = _os.path.splitext(outfile)[1].lower()
+        assert ext[0] == "."
+        if fmt is None:
+            fmt = ext[1:]
+        self.check_write(fmt, encoding)
+        _fmt, _subfmt = self.get_format_and_subtype(fmt, encoding)
+        snd = _soundfile.SoundFile(outfile, mode='w',
+                                   format=_fmt, subtype=_subfmt,
+                                   channels=util.numchannels(data), samplerate=sr)
+        snd.write(data)
+
 
 class _PySndfile(Backend):
     """
@@ -608,6 +746,7 @@ class _PySndfile(Backend):
     # _writer = _PySndfileWriter
 
     def __init__(self, priority:int):
+
         super().__init__(
                 priority  = priority,
                 filetypes = ["aif", "aiff",  "wav", "flac", "ogg", "wav64", "caf", "raw"],
@@ -618,14 +757,16 @@ class _PySndfile(Backend):
                 supports_metadata= True
         )
         self._writer = _PySndfileWriter
+        import pysndfile
+        self.pysndfile = pysndfile
 
     def read_with_info(self, path: str, start:float=0, end:float=0) -> Tuple[np.ndarray, SndInfo]:
-        snd = _pysndfile.PySndfile(path)
+        snd = self.pysndfile.PySndfile(path)
         info = self._getinfo(snd)
         samples = self._read(snd, start=start, end=end)
         return samples, info
 
-    def _read(self, snd: _pysndfile.PySndfile, start:float=0, end:float=0) -> np.ndarray:
+    def _read(self, snd: pysndfile.PySndfile, start:float=0, end:float=0) -> np.ndarray:
         sr: int = snd.samplerate()
         samp_start = int(start * sr)
         samp_end = int(end * sr) if end > 0 else snd.frames()
@@ -635,7 +776,7 @@ class _PySndfile(Backend):
 
     def read_chunked(self, path:str, chunksize:int=2048, start:float=0., stop:float=0.
                      ) -> Iterator[np.ndarray]:
-        snd = _pysndfile.PySndfile(path)
+        snd = self.pysndfile.PySndfile(path)
         sr = snd.samplerate()
         if start:
             snd.seek(int(start*snd.samplerate()))
@@ -645,9 +786,9 @@ class _PySndfile(Backend):
             yield snd.read_frames(nframes)
 
     def getinfo(self, path: str) -> SndInfo:
-        return self._getinfo(_pysndfile.PySndfile(path))
+        return self._getinfo(self.pysndfile.PySndfile(path))
 
-    def _getinfo(self, snd: _pysndfile.PySndfile) -> SndInfo:
+    def _getinfo(self, snd: pysndfile.PySndfile) -> SndInfo:
         metadataraw: Dict[str, bytes] = snd.get_strings()
         if metadataraw:
             metadata, extrainfo = {}, {}
@@ -667,8 +808,8 @@ class _PySndfile(Backend):
         self.check_write(outfile, encoding)
         ext = _os.path.splitext(outfile)[1].lower()
         fmt = self.get_sndfile_format(ext, encoding)
-        snd = _pysndfile.PySndfile(outfile, mode='w', format=fmt,
-                                  channels=util.numchannels(data), samplerate=sr)
+        snd = self.pysndfile.PySndfile(outfile, mode='w', format=fmt,
+                                       channels=util.numchannels(data), samplerate=sr)
         snd.write_frames(data)
         snd.writeSync()
 
@@ -689,11 +830,11 @@ class _PySndfile(Backend):
         assert fmt in ('pcm', 'float') and bits in (8, 16, 24, 32, 64)
         if fileformat == 'aif':
             fileformat = 'aiff'
-        return _pysndfile.construct_format(fileformat, f"{fmt}{bits}")
+        return self.pysndfile.construct_format(fileformat, f"{fmt}{bits}")
 
     def detect_format(self, path:str) -> Opt[str]:
-        f = _pysndfile.PySndfile(path)
-        return _pysndfile.fileformat_id_to_name.get(f.format())
+        f = self.pysndfile.PySndfile(path)
+        return self.pysndfile.fileformat_id_to_name.get(f.format())
 
 
 # ----------------------------------------------------------------
@@ -730,10 +871,14 @@ class _Miniaudio(Backend):
                                                      start=start, stop=stop)
 
 _BACKENDS: Dict[str, Backend] = {
-    'pysndfile': _PySndfile(priority=0),
+    'soundfile': _Soundfile(priority=0),
     'lameenc': _Lameenc(priority=10),
     'miniaudio': _Miniaudio(priority=10),
 }
+
+if _is_package_installed('pysndfile'):
+    _BACKENDS['pysndfile'] = _PySndfile(priority=1)
+
 
 _cache = {}
 

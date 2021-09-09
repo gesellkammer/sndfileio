@@ -6,13 +6,14 @@ thisdir = os.path.abspath(os.path.dirname(__file__))
 long_description = open(os.path.join(thisdir, 'README.rst')).read()
 
 setup(
-    version = "1.6.0",
+    version = "1.7.0",
     name = "sndfileio",
     python_requires = ">=3.8",
     install_requires = [
         "numpy>1.8", 
         "scipy",
-        "pysndfile",
+        # "pysndfile",
+        "soundfile",
         "miniaudio",
         "nnresample",
         "numpyx>=0.4.1",
