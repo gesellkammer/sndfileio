@@ -1,9 +1,19 @@
 from __future__ import annotations
 import os as _os
+import sys as _sys
 import numpy as np
 from importlib.util import find_spec as _find_spec
 import logging
-import soundfile as _soundfile
+
+try:
+    import soundfile as _soundfile
+except ImportError as e:
+    if 'sphinx' in _sys.modules:
+        fromsphinx.ext.autodoc.mock import _MockObject
+        _soundfile = _MockObject()
+    else:
+        raise e
+
 from . import util
 from .datastructs import SndInfo, SndWriter
 
