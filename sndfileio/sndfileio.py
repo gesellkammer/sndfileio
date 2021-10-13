@@ -9,7 +9,7 @@ try:
     import soundfile as _soundfile
 except ImportError as e:
     if 'sphinx' in _sys.modules:
-        fromsphinx.ext.autodoc.mock import _MockObject
+        from sphinx.ext.autodoc.mock import _MockObject
         _soundfile = _MockObject()
     else:
         raise e
