@@ -1,6 +1,6 @@
 numpy
 scipy
-pysndfile
+soundfile
 miniaudio
 nnresample
 numpyx
