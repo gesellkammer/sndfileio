@@ -9,7 +9,7 @@ setup(
     version="1.8.2",
     name="sndfileio",
     python_requires=">=3.8",
-    install_requires[
+    install_requires=[
         "numpy>1.8",
         "scipy",
         # "pysndfile",
