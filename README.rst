@@ -10,6 +10,7 @@ Documentation
 
 https://sndfileio.readthedocs.io/en/latest/
 
+------------------
 
 API
 ---
@@ -90,7 +91,7 @@ Installation
 External dependencies
 ---------------------
 
--  ``libsndfile`` (``apt install libsndfile1-dev``)
+- ``libsndfile`` (Debian/Ubuntu: ``apt install libsndfile1-dev``)
 
 .. note::
 

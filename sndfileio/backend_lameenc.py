@@ -13,7 +13,8 @@ def convertSamplesToInt16(y: np.ndarray) -> np.ndarray:
     return (y*np.iinfo(np.int16).max).astype(np.int16)
 
 
-def _create_encoder(sr:int, numchannels:int, bitrate:int, quality:int) -> lameenc.Encoder:
+def _create_encoder(sr: int, numchannels: int, bitrate: int, quality: int
+                    ) -> lameenc.Encoder:
     import lameenc
     encoder = lameenc.Encoder()
     encoder.silence()

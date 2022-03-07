@@ -1,6 +1,5 @@
 from __future__ import annotations
 from .datastructs import SndInfo
-from typing import Iterator
 import numpy as np 
 import miniaudio
 from typing import TYPE_CHECKING
@@ -8,7 +7,9 @@ if TYPE_CHECKING:
     from .datastructs import sample_t
     from typing import Iterator
 
-def _readfragment(path:str, start:float, end:float) -> sample_t:
+
+def _readfragment(path: str, start: float, end: float
+                  ) -> sample_t:
     info = miniaudio.mp3_get_file_info(path)
     seek_frame = int(start * info.sample_rate)
     if end == 0:
@@ -21,7 +22,7 @@ def _readfragment(path:str, start:float, end:float) -> sample_t:
     return samples, info.sample_rate
 
 
-def mp3read_chunked(path:str, chunksize:int, start:float=0., stop:float=0.
+def mp3read_chunked(path: str, chunksize: int, start=0., stop=0.
                     ) -> Iterator[np.ndarray]:
     info = miniaudio.mp3_get_file_info(path)
     sr = info.sample_rate
@@ -64,11 +65,16 @@ def mp3info(path: str) -> SndInfo:
     info = miniaudio.mp3_get_file_info(path)
     m = tinytag.TinyTag.get(path)
     metadata = {}
-    if m.title: metadata['title'] = m.title
-    if m.album: metadata['album'] = m.album
-    if m.comment: metadata['comment'] = m.comment
-    if m.artist: metadata['artist'] = m.artist
-    if m.track: metadata['tracknumber'] = m.track
+    if m.title:
+        metadata['title'] = m.title
+    if m.album:
+        metadata['album'] = m.album
+    if m.comment:
+        metadata['comment'] = m.comment
+    if m.artist:
+        metadata['artist'] = m.artist
+    if m.track:
+        metadata['tracknumber'] = m.track
     if not metadata:
         metadata = None
     return SndInfo(samplerate=info.sample_rate,

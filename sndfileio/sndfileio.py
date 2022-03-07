@@ -80,7 +80,7 @@ def sndread(path: str, start: float = 0, end: float = 0) -> sample_t:
         samples *= 1/maxvalue
         sndwrite(samples, sr, "out.flac")
     """
-    if not os.path.exists(path):
+    if not _os.path.exists(path):
         raise IOError(f"File not found: {path}")
     backend = _get_backend(path)
     if not backend:
@@ -339,7 +339,7 @@ def sndwrite_chunked(outfile: str, sr: int, encoding='auto', fileformat: str = N
                 if backend.can_write_chunked and fileformat in backend.filetypes_write]
     if not backends:
         raise SndfileError(f"No backend found to support the format {fileformat}")
-    backend = min(backends, key=lambda backend:backend.priority)
+    backend = min(backends, key=lambda backend: backend.priority)
     logger.debug(f"sndwrite_chunked: using backend {backend.name}")
     return backend.writer(outfile, sr, encoding, metadata=metadata, fileformat=fileformat,
                           **options)

@@ -6,11 +6,11 @@ thisdir = os.path.abspath(os.path.dirname(__file__))
 long_description = open(os.path.join(thisdir, 'README.rst')).read()
 
 setup(
-    version = "1.8.1",
-    name = "sndfileio",
-    python_requires = ">=3.8",
-    install_requires = [
-        "numpy>1.8", 
+    version="1.8.2",
+    name="sndfileio",
+    python_requires=">=3.8",
+    install_requires[
+        "numpy>1.8",
         "scipy",
         # "pysndfile",
         "soundfile",
@@ -20,9 +20,9 @@ setup(
         "tinytag",
         "filetype",
         "lameenc"],
-    packages = ["sndfileio"],
-    package_data = {'': ['README.rst'], 'sndfileio': ['py.typed']},
-    include_package_data = True,
+    packages=["sndfileio"],
+    package_data={'': ['README.rst'], 'sndfileio': ['py.typed']},
+    include_package_data=True,
 
     # Metadata
     description = "Simple API for reading / writing soundfiles",
