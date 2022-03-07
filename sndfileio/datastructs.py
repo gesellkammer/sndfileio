@@ -26,8 +26,8 @@ class SndInfo:
             'album', 'tracknumber'
     """
 
-    def __init__(self, samplerate:int, nframes:int, channels:int, 
-                 encoding:str, fileformat:str, metadata: Dict[str, str]=None,
+    def __init__(self, samplerate: int, nframes: int, channels: int,
+                 encoding: str, fileformat: str, metadata: Dict[str, str] = None,
                  extrainfo: Dict[str, Any] = None
                  ) -> None:
         self.samplerate: int = samplerate
@@ -91,18 +91,18 @@ class SndWriter:
     ...     writer.write(buf)
     """
 
-    def __init__(self, sr:int, outfile:str, encoding:str,
-                 fileformat: str = None, bitrate:int=0,
+    def __init__(self, sr: int, outfile: str, encoding: str,
+                 fileformat: str = None, bitrate=0,
                  backend=None,
-                 metadata: Dict[str, str]=None) -> None:
+                 metadata: Dict[str, str] = None) -> None:
         if metadata:
             for key in metadata:
                 if key not in util.metadata_possible_keys:
                     raise KeyError(f"Metadata key {key} unknown. Possible keys: "
                                    f"{util.metadata_possible_keys}")
-        self.sr:int = sr
-        self.outfile:str = outfile
-        self.encoding:str = encoding
+        self.sr: int = sr
+        self.outfile: str = outfile
+        self.encoding: str = encoding
         self.metadata: Opt[Dict[str, str]] = metadata
         self.bitrate = bitrate
         self.fileformat = fileformat or util.fileformat_from_ext(os.path.splitext(outfile)[1])
