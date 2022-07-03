@@ -24,11 +24,13 @@ class SndInfo:
             presented in the form of a dict[str, str], where keys are restricted
             to a subset of possible values: 'comment', 'title', 'artist',
             'album', 'tracknumber'
+        bitrate: compression bitrate, only present when reading compressed files (mp3, ogg)
     """
 
     def __init__(self, samplerate: int, nframes: int, channels: int,
                  encoding: str, fileformat: str, metadata: Dict[str, str] = None,
-                 extrainfo: Dict[str, Any] = None
+                 extrainfo: Dict[str, Any] = None,
+                 bitrate: int = None
                  ) -> None:
         self.samplerate: int = samplerate
         self.nframes: int = nframes
@@ -37,6 +39,7 @@ class SndInfo:
         self.fileformat: str = fileformat
         self.metadata = metadata
         self.extrainfo = extrainfo
+        self.bitrate = bitrate
 
     @property
     def duration(self) -> float:
@@ -50,6 +53,8 @@ channels   : {self.channels}
 encoding   : {self.encoding}
 fileformat : {self.fileformat}
 duration   : {self.duration:.3f}"""
+        if self.bitrate:
+            s += f"\nbitrate    : {self.bitrate}"
         if self.metadata:
             s += f"\nmetadata   : {self.metadata}"
         return s

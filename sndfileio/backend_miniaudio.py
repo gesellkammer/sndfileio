@@ -1,5 +1,6 @@
 from __future__ import annotations
 from .datastructs import SndInfo
+from . import util
 import numpy as np 
 import miniaudio
 from typing import TYPE_CHECKING
@@ -60,26 +61,30 @@ def mp3read(path: str, start=0., end=0.) -> sample_t:
     return npsamples, decoded.sample_rate
 
 
-def mp3info(path: str) -> SndInfo:
-    import tinytag
-    info = miniaudio.mp3_get_file_info(path)
-    m = tinytag.TinyTag.get(path)
-    metadata = {}
-    if m.title:
-        metadata['title'] = m.title
-    if m.album:
-        metadata['album'] = m.album
-    if m.comment:
-        metadata['comment'] = m.comment
-    if m.artist:
-        metadata['artist'] = m.artist
-    if m.track:
-        metadata['tracknumber'] = m.track
-    if not metadata:
-        metadata = None
+_encodingFromFormat = {
+    'SIGNED16': 'pcm16'
+}
+
+
+def makeSndInfo(info: miniaudio.SoundFileInfo, metadata: dict = None) -> SndInfo:
+    encoding = _encodingFromFormat.get(info.file_format.name, '')
+    bitrate = metadata.pop('bitrate', None)
     return SndInfo(samplerate=info.sample_rate,
                    nframes=info.num_frames,
                    channels=info.nchannels,
-                   encoding='pcm16',
-                   fileformat='mp3',
-                   metadata=metadata)
+                   encoding=encoding,
+                   fileformat=info.file_format.name,
+                   metadata=metadata,
+                   bitrate=bitrate)
+
+
+def mp3info(path: str) -> SndInfo:
+    info = miniaudio.mp3_get_file_info(path)
+    metadata = util.tinytagMetadata(path)
+    return makeSndInfo(info, metadata=metadata)
+
+
+def ogginfo(path: str) -> SndInfo:
+    info = miniaudio.vorbis_get_file_info(path)
+    metadata = util.tinytagMetadata(path)
+    return makeSndInfo(info, metadata=metadata)

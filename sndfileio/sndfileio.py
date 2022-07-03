@@ -650,11 +650,11 @@ class _Soundfile(Backend):
         'PCM_32': 'pcm32',
         'PCM_64': 'pcm64',
         'FLOAT': 'float32',
-        'DOUBLE': 'float64'
+        'DOUBLE': 'float64',
+        'VORBIS': 'vorbis'
     }
 
     encoding_to_subtype = {
-        'pcm24': 'PCM_24',
         'pcm16': 'PCM_16',
         'pcm24': 'PCM_24',
         'float32': 'FLOAT',
@@ -666,6 +666,7 @@ class _Soundfile(Backend):
         'WAVEX': 'wav',
         'AIFF': 'aiff',
         'FLAC': 'flac',
+        'OGG': 'ogg'
     }
 
     # 'comment', 'title', 'artist',
@@ -675,7 +676,7 @@ class _Soundfile(Backend):
     def __init__(self, priority: int):
         super().__init__(
             priority=priority,
-            filetypes=["aif", "aiff", "wav", "flac"],
+            filetypes=["aif", "aiff", "wav", "flac", "ogg"],
             filetypes_write=["aif", "aiff", "wav", "flac"],
             can_read_chunked=True,
             can_write_chunked=True,
@@ -712,7 +713,7 @@ class _Soundfile(Backend):
     def getinfo(self, path: str) -> SndInfo:
         return self._getinfo(_soundfile.SoundFile(path, 'r'))
 
-    def _getinfo(self, snd: _soundfile.SoundFile) -> SndInfo:
+    def _getinfo(self, snd: _soundfile.SoundFile, ) -> SndInfo:
         encoding = _Soundfile.subtype_to_encoding[snd.subtype]
         fileformat = _Soundfile.format_to_fileformat[snd.format]
         metadata = {}
@@ -721,12 +722,20 @@ class _Soundfile(Backend):
             if value:
                 metadata[key] = value
 
+        ext = _os.path.splitext(snd.name)[1]
+        if ext == '.ogg':
+            metadata = util.tinytagMetadata(snd.name)
+            bitrate = metadata.pop('bitrate', None)
+        else:
+            bitrate = None
+
         return SndInfo(samplerate=snd.samplerate,
                        nframes=snd.frames,
                        channels=snd.channels,
                        encoding=encoding,
                        fileformat=fileformat,
-                       metadata=metadata)
+                       metadata=metadata,
+                       bitrate=bitrate)
 
     @staticmethod
     def get_format_and_subtype(fmt: str, encoding: str = None
@@ -848,7 +857,7 @@ class _Miniaudio(Backend):
     def __init__(self, priority):
         super().__init__(
                 priority=priority,
-                filetypes= ['mp3'],
+                filetypes= ['mp3', 'ogg'],
                 filetypes_write = [],
                 can_read_chunked = True,
                 can_write_chunked = False,
@@ -858,11 +867,14 @@ class _Miniaudio(Backend):
 
     def getinfo(self, path: str) -> SndInfo:
         from . import backend_miniaudio
-        return backend_miniaudio.mp3info(path)
+        ext = _os.path.splitext(path)[1]
+        if ext == '.mp3':
+            return backend_miniaudio.mp3info(path)
+        elif ext == '.ogg':
+            return backend_miniaudio.ogginfo(path)
 
     def read_with_info(self, path: str, start=0., end=0.) -> Tuple[np.ndarray, SndInfo]:
-        from . import backend_miniaudio
-        return backend_miniaudio.mp3read(path, start, end)[0], backend_miniaudio.mp3info(path)
+        return self.read(path, start, end)[0], self.getinfo(path)
 
     def read(self, path: str, start: float = 0., end: float = 0.) -> sample_t:
         from . import backend_miniaudio
@@ -871,7 +883,11 @@ class _Miniaudio(Backend):
     def read_chunked(self, path: str, chunksize=2048, start: float = 0., stop: float = 0.
                      ) -> Iterator[np.ndarray]:
         from . import backend_miniaudio
-        return backend_miniaudio.mp3read_chunked(path, chunksize=chunksize, start=start, stop=stop)
+        ext = _os.path.splitext(path)[1]
+        if ext == '.mp3':
+            return backend_miniaudio.mp3read_chunked(path, chunksize=chunksize, start=start, stop=stop)
+        else:
+            raise FormatNotSupported(f'chunked reading is not supported for {ext}')
 
 
 _BACKENDS: Dict[str, Backend] = {

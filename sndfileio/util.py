@@ -349,3 +349,22 @@ def chunks(start:int, end:int, step:int) -> Iterator[Tuple[int, int]]:
         yield pos, step
         pos += step
     yield pos, end - pos
+
+
+def tinytagMetadata(path: str) -> dict:
+    import tinytag
+    m = tinytag.TinyTag.get(path)
+    metadata = {}
+    if m.title:
+        metadata['title'] = m.title
+    if m.album:
+        metadata['album'] = m.album
+    if m.comment:
+        metadata['comment'] = m.comment
+    if m.artist:
+        metadata['artist'] = m.artist
+    if m.track:
+        metadata['tracknumber'] = m.track
+    if m.bitrate:
+        metadata['bitrate'] = m.bitrate
+    return metadata
