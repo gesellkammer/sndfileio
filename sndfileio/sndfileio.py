@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("sndfileio")
 
+
 __all__ = [
     "sndread",
     "sndread_chunked",
@@ -51,6 +52,10 @@ def _is_package_installed(pkg):
 
 class SndfileError(IOError):
     pass
+
+
+def _normalize_path(path: str) -> str:
+    return _os.path.expanduser(path)
 
 
 def sndread(path: str, start: float = 0, end: float = 0) -> sample_t:
@@ -80,6 +85,7 @@ def sndread(path: str, start: float = 0, end: float = 0) -> sample_t:
         samples *= 1/maxvalue
         sndwrite(samples, sr, "out.flac")
     """
+    path = _normalize_path(path)
     if not _os.path.exists(path):
         raise IOError(f"File not found: {path}")
     backend = _get_backend(path)
@@ -115,6 +121,7 @@ def sndread_chunked(path: str, chunksize: int = 2048, start: float = 0., stop: f
         ...         writer.write(buf)
 
     """
+    path = _normalize_path(path)
     backend = _get_backend(path, key=lambda backend: backend.can_read_chunked)
     if backend:
         logger.debug(f"sndread_chunked: using backend {backend.name}")
@@ -145,6 +152,7 @@ def sndinfo(path: str) -> SndInfo:
         Duration: 0.4s, samplerate: 44100
 
     """
+    path = _normalize_path(path)
     backend = _get_backend(path)
     if not backend:
         raise FormatNotSupported("sndinfo: no backend supports this filetype")
@@ -176,6 +184,7 @@ def sndget(path: str, start: float = 0, end: float = 0) -> Tuple[np.ndarray, Snd
         sndwrite("out.flac", samples, info.samplerate, metadata=info.metadata)
 
     """
+    path = _normalize_path(path)
     backend = _get_backend(path)
     if not backend:
         raise RuntimeError(f"No backend available to read {path}")
@@ -265,6 +274,7 @@ def sndwrite(outfile: str, samples: np.ndarray, sr: int, encoding='default',
         >>> sndwrite("out.flac", samples, sr)
 
     """
+    outfile = _normalize_path(outfile)
     fileformat, encoding = _resolve_encoding(outfile, samples=samples, fileformat=fileformat,
                                              encoding=encoding)
     if encoding.startswith('pcm') and normalize_if_clipping:
@@ -333,6 +343,7 @@ def sndwrite_chunked(outfile: str, sr: int, encoding='auto', fileformat: str = N
                 writer.write(buf)
 
     """
+    outfile = _normalize_path(outfile)
     fileformat, encoding = _resolve_encoding(outfile, fileformat=fileformat,
                                              encoding=encoding)
     backends = [backend for backend in _get_backends()
@@ -384,6 +395,7 @@ def sndwrite_like(outfile: str, samples: np.ndarray, likefile: str, sr: int = No
         sndwrite_like(samples, "stereo.wav", "out.wav")
 
     """
+    outfile = _normalize_path(outfile)
     info = sndinfo(likefile)
     ext = _os.path.splitext(outfile)[1]
     outfileformat = util.fileformat_from_ext(ext)
@@ -445,6 +457,7 @@ def mp3write(outfile: str, samples: np.ndarray, sr: int, bitrate=224, quality=3
         be passed as **options.
 
     """
+    outfile = _normalize_path(outfile)
     mp3backend = _BACKENDS['lameenc']
     if not mp3backend.is_available():
         raise RuntimeError("lameenc backend is not available")
@@ -544,7 +557,7 @@ class Backend:
     def writer(self, outfile: str, sr: int, encoding: str, fileformat: str,
                bitrate=0, metadata: Dict[str, str] = None, **options
                ) -> SndWriter:
-        """ Open outfile for write with the given properties 
+        """ Open outfile for write with the given properties
 
         Args:
             sr: samplerate
@@ -556,7 +569,7 @@ class Backend:
                 *artist*, *tracknumber*, *album*, *software*
 
         Returns:
-            a :class:`SndWriter` 
+            a :class:`SndWriter`
         """
         pass
         if self._writer is None:
@@ -684,7 +697,7 @@ class _Soundfile(Backend):
             supports_metadata=True
         )
         self._writer = _SoundfileWriter
-        
+
     def read_with_info(self, path: str, start: float = 0, end: float = 0) -> Tuple[np.ndarray, SndInfo]:
         snd = _soundfile.SoundFile(path, 'r')
         info = self._getinfo(snd)
@@ -955,4 +968,3 @@ def _get_write_backend(fileformat: str) -> Opt[Backend]:
     if backends:
         return min(backends, key=lambda backend: backend.priority)
     return None
-

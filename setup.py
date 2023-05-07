@@ -12,7 +12,6 @@ setup(
     install_requires=[
         "numpy>1.8",
         "scipy",
-        # "pysndfile",
         "soundfile",
         "miniaudio",
         "nnresample",
