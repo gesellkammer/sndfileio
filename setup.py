@@ -6,7 +6,7 @@ thisdir = os.path.abspath(os.path.dirname(__file__))
 long_description = open(os.path.join(thisdir, 'README.rst')).read()
 
 setup(
-    version="1.9.0",
+    version="1.9.1",
     name="sndfileio",
     python_requires=">=3.8",
     install_requires=[
