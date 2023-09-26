@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import pysndfile
     from .datastructs import sample_t
-    from typing import Dict, Tuple, Union, Iterator, Optional as Opt, List, Callable, Type
+    from typing import Union, Iterator, Callable, Type
 
 
 logger = logging.getLogger("sndfileio")
@@ -66,9 +66,9 @@ def sndread(path: str, start: float = 0, end: float = 0) -> sample_t:
     of the soundfile
 
     Args:
-        path: (str) the path to read
-        start: (float) the time to start reading
-        end: (float) the time to end reading (0=until the end)
+        path: the path to read
+        start: the time to start reading
+        end: the time to end reading (0=until the end)
 
     Returns:
         a tuple (samples:ndarray[dtype=float], sr: int)
@@ -101,10 +101,10 @@ def sndread_chunked(path: str, chunksize: int = 2048, start: float = 0., stop: f
     Read a soundfile in chunks
 
     Args:
-        path: (str) the path to read
-        chunksize: (int) the chunksize, in samples
-        start: (float) time to skip before reading
-        stop: (float) time to stop reading (0=end of file)
+        path: the path to read
+        chunksize: the chunksize, in samples
+        start: time to skip before reading
+        stop: time to stop reading (0=end of file)
 
     Returns:
         a generator yielding numpy arrays (float64) of at most `chunksize` frames
@@ -136,7 +136,7 @@ def sndinfo(path: str) -> SndInfo:
     Get info about a soundfile. Returns a :class:`SndInfo`
 
     Args:
-        path: (str) the path to a soundfile
+        path: the path to a soundfile
 
     Returns:
         a :class:`SndInfo` (attributes: **samplerate**: `int`, *nframes*: `int`, *channels*: `int`,
@@ -160,7 +160,7 @@ def sndinfo(path: str) -> SndInfo:
     return backend.getinfo(path)
 
 
-def sndget(path: str, start: float = 0, end: float = 0) -> Tuple[np.ndarray, SndInfo]:
+def sndget(path: str, start: float = 0, end: float = 0) -> tuple[np.ndarray, SndInfo]:
     """
     Read a soundfile and its metadata
 
@@ -192,9 +192,9 @@ def sndget(path: str, start: float = 0, end: float = 0) -> Tuple[np.ndarray, Snd
     return backend.read_with_info(path, start=start, end=end)
 
 
-def _resolve_encoding(outfile: str, fileformat: Opt[str], encoding: Opt[str],
-                      samples: Opt[np.ndarray] = None
-                      ) -> Tuple[str, str]:
+def _resolve_encoding(outfile: str, fileformat: Optional[str], encoding: Optional[str],
+                      samples: Optional[np.ndarray] = None
+                      ) -> tuple[str, str]:
     if not fileformat:
         fileformat = util.fileformat_from_ext(_os.path.splitext(outfile)[1])
     if encoding == 'auto':
@@ -207,9 +207,13 @@ def _resolve_encoding(outfile: str, fileformat: Opt[str], encoding: Opt[str],
     return fileformat, encoding
 
 
-def sndwrite(outfile: str, samples: np.ndarray, sr: int, encoding='default',
-             fileformat: str = None, normalize_if_clipping=True,
-             metadata: Dict[str, str] = None, **options
+def sndwrite(outfile: str,
+             samples: np.ndarray,
+             sr: int, encoding='default',
+             fileformat: str = None,
+             normalize_if_clipping=True,
+             metadata: dict[str, str] = None,
+             **options
              ) -> None:
     """
     Write all samples to a soundfile.
@@ -295,7 +299,7 @@ def sndwrite(outfile: str, samples: np.ndarray, sr: int, encoding='default',
 
 
 def sndwrite_chunked(outfile: str, sr: int, encoding='auto', fileformat: str = None,
-                     metadata: Dict[str, str] = None, **options
+                     metadata: dict[str, str] = None, **options
                      ) -> SndWriter:
     """
     Opens a file for writing and returns a SndWriter
@@ -357,7 +361,7 @@ def sndwrite_chunked(outfile: str, sr: int, encoding='auto', fileformat: str = N
 
 
 def sndwrite_like(outfile: str, samples: np.ndarray, likefile: str, sr: int = None,
-                  metadata: Dict[str, str] = None
+                  metadata: dict[str, str] = None
                   ) -> None:
     """
     Write samples to outfile with samplerate/fileformat/encoding taken from likefile
@@ -408,7 +412,7 @@ def sndwrite_like(outfile: str, samples: np.ndarray, likefile: str, sr: int = No
 
 
 def sndwrite_chunked_like(outfile: str, likefile: str, sr: int = None,
-                          metadata: Dict[str, str] = None
+                          metadata: dict[str, str] = None
                           ) -> SndWriter:
     """
     Create a SndWriter with samplerate/format/encoding of the
@@ -518,8 +522,8 @@ class _PySndfileWriter(SndWriter):
 
 class Backend:
     def __init__(self, priority: int,
-                 filetypes: List[str],
-                 filetypes_write: List[str],
+                 filetypes: list[str],
+                 filetypes_write: list[str],
                  can_read_chunked: bool,
                  can_write_chunked: bool,
                  name: str,
@@ -532,10 +536,10 @@ class Backend:
         self.supports_metadata = supports_metadata
         self.name = name
         self._backend = None
-        self._writer: Opt[Type[SndWriter]] = None
+        self._writer: Optional[Type[SndWriter]] = None
 
     def read_with_info(self, path: str, start=0., end=0.
-                       ) -> Tuple[np.ndarray, SndInfo]:
+                       ) -> tuple[np.ndarray, SndInfo]:
         return NotImplemented
 
     def read(self, path: str, start=0., end=0.) -> sample_t:
@@ -555,7 +559,7 @@ class Backend:
         return _is_package_installed(self.name)
 
     def writer(self, outfile: str, sr: int, encoding: str, fileformat: str,
-               bitrate=0, metadata: Dict[str, str] = None, **options
+               bitrate=0, metadata: dict[str, str] = None, **options
                ) -> SndWriter:
         """ Open outfile for write with the given properties
 
@@ -613,7 +617,7 @@ class _Lameenc(Backend):
                          supports_metadata=False)
 
     def writer(self, outfile: str, sr: int, encoding: str, fileformat: str,
-               metadata: Dict[str, str] = None, **options
+               metadata: dict[str, str] = None, **options
                ) -> SndWriter:
         from . import backend_lameenc
         bitrate = options.pop('bitrate', 160)
@@ -698,7 +702,7 @@ class _Soundfile(Backend):
         )
         self._writer = _SoundfileWriter
 
-    def read_with_info(self, path: str, start: float = 0, end: float = 0) -> Tuple[np.ndarray, SndInfo]:
+    def read_with_info(self, path: str, start: float = 0, end: float = 0) -> tuple[np.ndarray, SndInfo]:
         snd = _soundfile.SoundFile(path, 'r')
         info = self._getinfo(snd)
         samples = self._read(snd, start=start, end=end)
@@ -752,7 +756,7 @@ class _Soundfile(Backend):
 
     @staticmethod
     def get_format_and_subtype(fmt: str, encoding: str = None
-                               ) -> Tuple[str, str]:
+                               ) -> tuple[str, str]:
         soundfile_fmt = {
             'wav': 'WAVEX',
             'aif': 'AIFF',
@@ -795,7 +799,7 @@ class _PySndfile(Backend):
         import pysndfile
         self.pysndfile = pysndfile
 
-    def read_with_info(self, path: str, start: float = 0, end: float = 0) -> Tuple[np.ndarray, SndInfo]:
+    def read_with_info(self, path: str, start: float = 0, end: float = 0) -> tuple[np.ndarray, SndInfo]:
         snd = self.pysndfile.PySndfile(path)
         info = self._getinfo(snd)
         samples = self._read(snd, start=start, end=end)
@@ -824,7 +828,7 @@ class _PySndfile(Backend):
         return self._getinfo(self.pysndfile.PySndfile(path))
 
     def _getinfo(self, snd: pysndfile.PySndfile) -> SndInfo:
-        metadataraw: Dict[str, bytes] = snd.get_strings()
+        metadataraw: dict[str, bytes] = snd.get_strings()
         if metadataraw:
             metadata, extrainfo = {}, {}
             for k, v in metadataraw.items():
@@ -858,7 +862,7 @@ class _PySndfile(Backend):
             fileformat = 'aiff'
         return self.pysndfile.construct_format(fileformat, f"{fmt}{bits}")
 
-    def detect_format(self, path: str) -> Opt[str]:
+    def detect_format(self, path: str) -> Optional[str]:
         f = self.pysndfile.PySndfile(path)
         return self.pysndfile.fileformat_id_to_name.get(f.format())
 
@@ -886,7 +890,7 @@ class _Miniaudio(Backend):
         elif ext == '.ogg':
             return backend_miniaudio.ogginfo(path)
 
-    def read_with_info(self, path: str, start=0., end=0.) -> Tuple[np.ndarray, SndInfo]:
+    def read_with_info(self, path: str, start=0., end=0.) -> tuple[np.ndarray, SndInfo]:
         return self.read(path, start, end)[0], self.getinfo(path)
 
     def read(self, path: str, start: float = 0., end: float = 0.) -> sample_t:
@@ -903,7 +907,7 @@ class _Miniaudio(Backend):
             raise FormatNotSupported(f'chunked reading is not supported for {ext}')
 
 
-_BACKENDS: Dict[str, Backend] = {
+_BACKENDS: dict[str, Backend] = {
     'soundfile': _Soundfile(priority=0),
     'lameenc': _Lameenc(priority=10),
     'miniaudio': _Miniaudio(priority=10),
@@ -924,7 +928,7 @@ def report_backends():
             print(f"Backend {b.name} NOT available")
 
 
-def _get_backends() -> List[Backend]:
+def _get_backends() -> list[Backend]:
     backends = _cache.get('backends')
     if not backends:
         _cache['backends'] = backends = [b for b in _BACKENDS.values() if b.is_available()]
@@ -932,7 +936,7 @@ def _get_backends() -> List[Backend]:
 
 
 def _get_backend(path: str = None, key: Callable[[Backend], bool] = None
-                 ) -> Opt[Backend]:
+                 ) -> Optional[Backend]:
     """
     Get available backends to read/write the file given
 
@@ -960,7 +964,7 @@ def _get_backend(path: str = None, key: Callable[[Backend], bool] = None
     return None
 
 
-def _get_write_backend(fileformat: str) -> Opt[Backend]:
+def _get_write_backend(fileformat: str) -> Optional[Backend]:
     backends = _get_backends()
     if not backends:
         raise SndfileError("No available backends for writing")

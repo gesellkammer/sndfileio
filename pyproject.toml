@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sndfileio"
+version = "1.9.3"
+description = "Simple API for reading / writing soundfiles"
+authors = [
+  { name = "Eduardo Moguillansky", email = "eduardo.moguillansky@gmail.com" },
+]
+license = { file = "LICENSE.md" }
+readme = "README.rst"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.8"
+dependencies = [
+	"numpy>1.8",
+    "scipy",
+    "soundfile",
+    "miniaudio",
+    "nnresample",
+    "numpyx>=0.4.1",
+    "tinytag",
+    "filetype",
+    "lameenc",
+]
+
+[tool.setuptools]
+packages = ["sndfileio"]
+
+
+[tool.setuptools.package-data]
+sndfileio = ['py.typed']
+
+[project.urls]
+"Homepage" = "https://github.com/gesellkammer/sndfileio"
