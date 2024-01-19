@@ -5,7 +5,7 @@ import os
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from typing import Callable, Optional as Opt, Iterator, Tuple, Union
+    from typing import Callable, Iterator
 
 
 
@@ -33,7 +33,7 @@ metadata_possible_keys = {'comment', 'title', 'artist', 'album', 'tracknumber', 
 known_fileformats = encodings_for_format.keys()
 
 
-def getchannel(samples: np.ndarray, channel:int) -> np.ndarray:
+def getchannel(samples: np.ndarray, channel: int) -> np.ndarray:
     """
     Returns a view into a channel of samples.
 
@@ -64,7 +64,7 @@ def getchannel(samples: np.ndarray, channel:int) -> np.ndarray:
     return samples[:, channel]
 
 
-def numchannels(samples:np.ndarray) -> int:
+def numchannels(samples: np.ndarray) -> int:
     """
     return the number of channels present in samples
 
@@ -85,7 +85,7 @@ def numchannels(samples:np.ndarray) -> int:
         return samples.shape[1]
 
 
-def apply_multichannel(data:np.ndarray, func:Callable[[np.ndarray], np.ndarray]
+def apply_multichannel(data: np.ndarray, func:Callable[[np.ndarray], np.ndarray]
                        ) -> np.ndarray:
     """
     Apply a function ``(samples1D) -> samples1D`` along the channels of a multichannel
@@ -123,7 +123,7 @@ def apply_multichannel(data:np.ndarray, func:Callable[[np.ndarray], np.ndarray]
         return out.T
 
 
-def numpy24to32bit(data:np.ndarray, bigendian:bool=False) -> np.ndarray:
+def numpy24to32bit(data: np.ndarray, bigendian: bool = False) -> np.ndarray:
     """
     Convert a 24-bit pcm to 32-bit pcm samples
 
@@ -146,14 +146,14 @@ def numpy24to32bit(data:np.ndarray, bigendian:bool=False) -> np.ndarray:
     return np.fromstring(targetraw, dtype=np.int32)
 
 
-def mix(samples:np.ndarray, scale_by_numchannels:bool=True) -> np.ndarray:
+def mix(samples: np.ndarray, scale_by_numchannels=True) -> np.ndarray:
     summed = samples.sum(0)
     if scale_by_numchannels:
         summed *= (1 / numchannels(samples))
     return summed
 
 
-def fileformat_from_ext(ext: str) -> Opt[str]:
+def fileformat_from_ext(ext: str) -> str | None:
     """
     Deduces the file format from the extension
 
@@ -180,7 +180,7 @@ def fileformat_from_ext(ext: str) -> Opt[str]:
     return ext if ext in known_fileformats else None
 
 
-def detect_format(path:str) -> Opt[str]:
+def detect_format(path:str) -> str | None:
     """
     Detect the file format of a given soundfile
 
@@ -198,9 +198,11 @@ def detect_format(path:str) -> Opt[str]:
     return ext if ext in known_fileformats else None
 
 
-def default_encoding(fileformat:str) -> Opt[str]:
+def default_encoding(fileformat: str) -> str:
     """
     Return the default encoding for the given fileformat
+
+    Returns an empty string if the fileformat is not supported
 
     =======    =================
     Format     Default encoding
@@ -212,10 +214,10 @@ def default_encoding(fileformat:str) -> Opt[str]:
     =======    =================
 
     """
-    return _default_encoding.get(fileformat)
+    return _default_encoding.get(fileformat, '')
 
 
-def asmono(samples:np.ndarray, channel:Union[int, str]=0) -> np.ndarray:
+def asmono(samples: np.ndarray, channel: int | str = 0) -> np.ndarray:
     """
     convert samples to mono if they are not mono already.
 
@@ -240,7 +242,7 @@ def asmono(samples:np.ndarray, channel:Union[int, str]=0) -> np.ndarray:
                          " or 'mix' to mix down all channels")
 
 
-def bitdepth(data:np.ndarray, snap:bool=True) -> int:
+def bitdepth(data: np.ndarray, snap: bool=True) -> int:
     """
     returns the number of bits actually used to represent the data.
 
@@ -269,7 +271,7 @@ def bitdepth(data:np.ndarray, snap:bool=True) -> int:
     return maxbits
 
 
-def as_float_array(data:np.ndarray, encoding:str) -> np.ndarray:
+def as_float_array(data: np.ndarray, encoding:str) -> np.ndarray:
     """
     Convert (if necessary) an array containing pcm (integer) samples
     to float64 between -1:1
@@ -292,7 +294,7 @@ def as_float_array(data:np.ndarray, encoding:str) -> np.ndarray:
         raise ValueError("encoding not understood")
 
 
-def samples_out_of_range(data:np.ndarray) -> bool:
+def samples_out_of_range(data: np.ndarray) -> bool:
     """
     Returns True if any sample is out of the range -1:1
     """
@@ -304,7 +306,7 @@ def samples_out_of_range(data:np.ndarray) -> bool:
     return False
 
 
-def guess_encoding(data:np.ndarray, fmt: str) -> str:
+def guess_encoding(data: np.ndarray, fmt: str) -> str:
     """
     Guess the encoding for data based on the format. For each format
     an encoding is selected which is able to represent the data without
@@ -342,7 +344,7 @@ def guess_encoding(data:np.ndarray, fmt: str) -> str:
     return encoding
 
 
-def chunks(start:int, end:int, step:int) -> Iterator[Tuple[int, int]]:
+def chunks(start: int, end: int, step: int) -> Iterator[Tuple[int, int]]:
     pos = start
     last_full = end - step
     while pos < last_full:

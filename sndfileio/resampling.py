@@ -4,9 +4,7 @@ import numpy as np
 from .dsp import lowpass_cheby
 import logging
 from math import gcd
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from typing import List, Optional as Opt, Callable
+from typing import Callable
 
 
 class BackendNotAvailable(Exception):

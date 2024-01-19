@@ -3,10 +3,10 @@ import numpy as np
 from . import util
 import os
 
-from typing import TYPE_CHECKING, Tuple
+from typing import Any, TYPE_CHECKING
+
 if TYPE_CHECKING:
-    from typing import List, Optional as Opt, Dict, Any
-    sample_t = Tuple[np.ndarray, int]
+    sample_t = tuple[np.ndarray, int]
 
 
 class SndInfo:
@@ -28,8 +28,8 @@ class SndInfo:
     """
 
     def __init__(self, samplerate: int, nframes: int, channels: int,
-                 encoding: str, fileformat: str, metadata: Dict[str, str] = None,
-                 extrainfo: Dict[str, Any] = None,
+                 encoding: str, fileformat: str, metadata: dict[str, str] = None,
+                 extrainfo: dict[str, Any] = None,
                  bitrate: int = None
                  ) -> None:
         self.samplerate: int = samplerate
@@ -96,10 +96,15 @@ class SndWriter:
     ...     writer.write(buf)
     """
 
-    def __init__(self, sr: int, outfile: str, encoding: str,
-                 fileformat: str = None, bitrate=0,
+    def __init__(self,
+                 sr: int,
+                 outfile: str,
+                 encoding: str,
+                 fileformat: str = None,
+                 bitrate=0,
                  backend=None,
-                 metadata: Dict[str, str] = None) -> None:
+                 metadata: dict[str, str] = None
+                 ) -> None:
         if metadata:
             for key in metadata:
                 if key not in util.metadata_possible_keys:
@@ -108,7 +113,7 @@ class SndWriter:
         self.sr: int = sr
         self.outfile: str = outfile
         self.encoding: str = encoding
-        self.metadata: Opt[Dict[str, str]] = metadata
+        self.metadata: dict[str, str] = metadata or {}
         self.bitrate = bitrate
         self.fileformat = fileformat or util.fileformat_from_ext(os.path.splitext(outfile)[1])
         self._backend = backend
@@ -140,7 +145,7 @@ class SndWriter:
         """
         Explicitely close this file
         """
-        if self._file is not None:
+        if self._file:
             self._file.close()
         self._file = None
 
@@ -151,5 +156,5 @@ class SndWriter:
         self.close()
 
     @property
-    def filetypes(self) -> List[str]:
+    def filetypes(self) -> list[str]:
         return self._backend.filetypes_write
