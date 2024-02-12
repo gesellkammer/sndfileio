@@ -1,0 +1,33 @@
+name: Test
+
+on: [push, pull_request]
+
+jobs:
+  test-pip:
+    name: Test pip install on ${{ matrix.os }} - ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+        python-version: [ "3.9", "3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: install via pip
+        run: |
+          pip install sndfileio
+
+      - name: Run tests
+        run: |
+          cd test
+          python test1.py -o "out-${{ matrix.os }}.flac"
+          python test1.py -o "out-${{ matrix.os }}.mp3"
+
+      - uses: actions/upload-artifact@v3
+        with:
+          path: ./sndout/*
