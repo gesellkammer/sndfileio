@@ -21,7 +21,7 @@ test_task:
     cd ..
         
   binaries_artifacts:
-    path: test/*.wav
+    path: test/sndout/*.wav
 
 
 
