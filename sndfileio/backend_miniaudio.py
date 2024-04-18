@@ -1,3 +1,6 @@
+"""
+miniaudio is used for mp3 reading only
+"""
 from __future__ import annotations
 from .datastructs import SndInfo
 from . import util

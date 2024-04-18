@@ -27,6 +27,7 @@ jobs:
           cd test
           python test1.py -o "out-${{ matrix.os }}.flac"
           python test1.py -o "out-${{ matrix.os }}.mp3"
+          ls -l sndout
 
       - uses: actions/upload-artifact@v3
         with:

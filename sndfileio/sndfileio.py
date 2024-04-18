@@ -522,14 +522,14 @@ class _PySndfileWriter(SndWriter):
 
 class Backend:
     def __init__(self, priority: int,
-                 filetypes: list[str],
+                 filetypes_read: list[str],
                  filetypes_write: list[str],
                  can_read_chunked: bool,
                  can_write_chunked: bool,
                  name: str,
                  supports_metadata: bool):
         self.priority = priority
-        self.filetypes = filetypes
+        self.filetypes_read = filetypes_read
         self.filetypes_write = filetypes_write
         self.can_read_chunked = can_read_chunked
         self.can_write_chunked = can_write_chunked
@@ -593,8 +593,8 @@ class Backend:
     def dump(self) -> None:
         """ Dump information about this backend """
         print(f"Backend: {self.name} (available: {self.is_available()}, priority: {self.priority})")
-        if self.filetypes:
-            readtypes = ", ".join(self.filetypes)
+        if self.filetypes_read:
+            readtypes = ", ".join(self.filetypes_read)
             print(f"    read types : {readtypes}")
         if self.filetypes_write:
             writetypes = ", ".join(self.filetypes_write)
@@ -609,7 +609,7 @@ class _Lameenc(Backend):
 
     def __init__(self, priority: int):
         super().__init__(priority=priority,
-                         filetypes=[],
+                         filetypes_read=[],
                          filetypes_write=['mp3'],
                          can_read_chunked=False,
                          can_write_chunked=True,
@@ -668,7 +668,8 @@ class _Soundfile(Backend):
         'PCM_64': 'pcm64',
         'FLOAT': 'float32',
         'DOUBLE': 'float64',
-        'VORBIS': 'vorbis'
+        'VORBIS': 'vorbis',
+        'MPEG_LAYER_III': ''
     }
 
     encoding_to_subtype = {
@@ -683,7 +684,8 @@ class _Soundfile(Backend):
         'WAVEX': 'wav',
         'AIFF': 'aiff',
         'FLAC': 'flac',
-        'OGG': 'ogg'
+        'OGG': 'ogg',
+        'MP3': 'mp3'
     }
 
     # 'comment', 'title', 'artist',
@@ -693,8 +695,8 @@ class _Soundfile(Backend):
     def __init__(self, priority: int):
         super().__init__(
             priority=priority,
-            filetypes=["aif", "aiff", "wav", "flac", "ogg"],
-            filetypes_write=["aif", "aiff", "wav", "flac"],
+            filetypes_read=["aif", "aiff", "wav", "flac", "ogg", "mp3"],
+            filetypes_write=["aif", "aiff", "wav", "flac", "mp3"],
             can_read_chunked=True,
             can_write_chunked=True,
             name='soundfile',
@@ -731,8 +733,8 @@ class _Soundfile(Backend):
         return self._getinfo(_soundfile.SoundFile(path, 'r'))
 
     def _getinfo(self, snd: _soundfile.SoundFile, ) -> SndInfo:
-        encoding = _Soundfile.subtype_to_encoding[snd.subtype]
-        fileformat = _Soundfile.format_to_fileformat[snd.format]
+        encoding = _Soundfile.subtype_to_encoding.get(snd.subtype, '')
+        fileformat = _Soundfile.format_to_fileformat.get(snd.format, '')
         metadata = {}
         for key in self.metadata_keys:
             value = getattr(snd, key, None)
@@ -740,7 +742,7 @@ class _Soundfile(Backend):
                 metadata[key] = value
 
         ext = _os.path.splitext(snd.name)[1]
-        if ext == '.ogg':
+        if ext == '.ogg' or ext == '.mp3':
             metadata = util.tinytagMetadata(snd.name)
             bitrate = metadata.pop('bitrate', None)
         else:
@@ -762,12 +764,19 @@ class _Soundfile(Backend):
             'aif': 'AIFF',
             'aiff': 'AIFF',
             'flac': 'FLAC',
+            'mp3': 'MP3',
+            'ogg': 'OGG'
         }.get(fmt)
         if not soundfile_fmt:
             raise ValueError(f"Format {fmt} not supported")
-        subformat = _Soundfile.encoding_to_subtype.get(encoding)
-        if not subformat:
-            raise ValueError(f"Encoding {encoding} not supported for {fmt}")
+        if fmt == 'ogg':
+            subformat = 'Vorbis'
+        elif fmt == 'mp3':
+            subformat = 'MPEG_LAYER_III'
+        else:
+            subformat = _Soundfile.encoding_to_subtype.get(encoding)
+            if not subformat:
+                raise ValueError(f"Encoding {encoding} not supported for {fmt}")
         return soundfile_fmt, subformat
 
 
@@ -788,7 +797,7 @@ class _PySndfile(Backend):
 
         super().__init__(
                 priority  = priority,
-                filetypes = ["aif", "aiff",  "wav", "flac", "ogg", "wav64", "caf", "raw"],
+                filetypes_read= ["aif", "aiff", "wav", "flac", "ogg", "wav64", "caf", "raw"],
                 filetypes_write = ["aif", "aiff",  "wav", "flac", "ogg", "wav64", "caf", "raw"],
                 can_read_chunked = True,
                 can_write_chunked = True,
@@ -855,7 +864,7 @@ class _PySndfile(Backend):
         Returns:
             the pysndfile format id
         """
-        assert fileformat in self.filetypes
+        assert fileformat in self.filetypes_read
         fmt, bits = encoding[:-2], int(encoding[-2:])
         assert fmt in ('pcm', 'float') and bits in (8, 16, 24, 32, 64)
         if fileformat == 'aif':
@@ -874,7 +883,7 @@ class _Miniaudio(Backend):
     def __init__(self, priority):
         super().__init__(
                 priority=priority,
-                filetypes= ['mp3', 'ogg'],
+                filetypes_read= ['mp3', 'ogg'],
                 filetypes_write = [],
                 can_read_chunked = True,
                 can_write_chunked = False,
@@ -910,7 +919,7 @@ class _Miniaudio(Backend):
 _BACKENDS: dict[str, Backend] = {
     'soundfile': _Soundfile(priority=0),
     'lameenc': _Lameenc(priority=10),
-    'miniaudio': _Miniaudio(priority=10),
+    # 'miniaudio': _Miniaudio(priority=10),
 }
 
 # if _is_package_installed('pysndfile'):
@@ -958,7 +967,7 @@ def _get_backend(path: str = None, key: Callable[[Backend], bool] = None
     if key:
         backends = [b for b in backends if key(b)]
     if filetype:
-        backends = [b for b in backends if filetype in b.filetypes]
+        backends = [b for b in backends if filetype in b.filetypes_read]
     if backends:
         return min(backends, key=lambda backend: backend.priority)
     return None

@@ -316,7 +316,7 @@ def guess_encoding(data: np.ndarray, fmt: str) -> str:
 
     Args:
         data: the samples
-        fmt: on of 'wav', 'aiff', 'flac'
+        fmt: on of 'wav', 'aiff', 'flac', 'ogg', 'mp3'
 
     Returns:
         the encoding, one of 'pcm16', 'pcm24', 'float32'
@@ -328,7 +328,7 @@ def guess_encoding(data: np.ndarray, fmt: str) -> str:
         encoding = {
             16: 'pcm16',
             24: 'pcm24',
-            32: 'flpat32',
+            32: 'float32',
         }.get(maxbits, 'float32')
     elif fmt == "flac":
         maxbits = min(24, bitdepth(data, snap=True))
@@ -337,6 +337,8 @@ def guess_encoding(data: np.ndarray, fmt: str) -> str:
             24: 'pcm24',
         }.get(maxbits, 'pcm24')
     elif fmt == 'mp3':
+        encoding = 'pcm16'
+    elif fmt == 'ogg':
         encoding = 'pcm16'
     else:
         raise ValueError(f"The format {fmt} is not supported")

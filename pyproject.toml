@@ -20,7 +20,7 @@ dependencies = [
 	"numpy>1.8",
     "scipy",
     "soundfile",
-    "miniaudio",
+    # "miniaudio",   # use soundfile to read mp3, it is supported since version 1.1.0
     "nnresample",
     "numpyx>=0.4.1",
     "tinytag",
