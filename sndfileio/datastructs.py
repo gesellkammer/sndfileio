@@ -28,9 +28,9 @@ class SndInfo:
     """
 
     def __init__(self, samplerate: int, nframes: int, channels: int,
-                 encoding: str, fileformat: str, metadata: dict[str, str] = None,
-                 extrainfo: dict[str, Any] = None,
-                 bitrate: int = None
+                 encoding: str, fileformat: str, metadata: dict[str, str] | None = None,
+                 extrainfo: dict[str, Any] | None = None,
+                 bitrate: int = 0
                  ) -> None:
         self.samplerate: int = samplerate
         self.nframes: int = nframes
@@ -100,10 +100,10 @@ class SndWriter:
                  sr: int,
                  outfile: str,
                  encoding: str,
-                 fileformat: str = None,
+                 fileformat='',
                  bitrate=0,
                  backend=None,
-                 metadata: dict[str, str] = None
+                 metadata: dict[str, str] | None = None
                  ) -> None:
         if metadata:
             for key in metadata:
@@ -115,7 +115,7 @@ class SndWriter:
         self.encoding: str = encoding
         self.metadata: dict[str, str] = metadata or {}
         self.bitrate = bitrate
-        self.fileformat = fileformat or util.fileformat_from_ext(os.path.splitext(outfile)[1])
+        self.fileformat = fileformat or util.fileformat_from_ext(os.path.splitext(outfile)[1]) or 'wav'
         self._backend = backend
         self._file = None
 
@@ -157,4 +157,6 @@ class SndWriter:
 
     @property
     def filetypes(self) -> list[str]:
+        if self._backend is None:
+            return []
         return self._backend.filetypes_write

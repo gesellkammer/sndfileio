@@ -92,7 +92,4 @@ Examples
 """
 
 from .sndfileio import *
-from .resampling import resample
 from . import util
-
-del resampling

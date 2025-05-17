@@ -1,9 +1,6 @@
 from __future__ import annotations
-import scipy.signal as sig
 import numpy as np
-from .dsp import lowpass_cheby
 import logging
-from math import gcd
 from typing import Callable
 
 
@@ -29,7 +26,7 @@ def _applyMultichan(samples: np.ndarray,
     return newsamples    
     
 
-def _resample_scipy(samples: np.ndarray, sr:int, newsr:int, window='hanning'
+def _resample_scipy(samples: np.ndarray, sr: int, newsr: int, window='hanning'
                     ) -> np.ndarray:
     try:
         from scipy.signal import resample
@@ -43,7 +40,7 @@ def _resample_scipy(samples: np.ndarray, sr:int, newsr:int, window='hanning'
                            lambda S: resample(S, lenNewSamples, window=window))
 
 
-def _resample_samplerate(samples:np.ndarray, sr:int, newsr:int) -> np.ndarray:
+def _resample_samplerate(samples: np.ndarray, sr: int, newsr: int) -> np.ndarray:
     """
     Uses https://github.com/tuxu/python-samplerate
     """
@@ -63,29 +60,21 @@ _precomputed_filters = {}
 
 
 def _nnresample_compute_filt(up, down, beta=5.0, L=32001):
-    r"""
+    """
     Computes a filter to resample a signal from rate "down" to rate "up"
     
-    Parameters
-    ----------
-    up : int
-        The upsampling factor.
-    down : int
-        The downsampling factor.
-    beta : float
-        Beta factor for Kaiser window.  Determines tradeoff between
-        stopband attenuation and transition band width
-    L : int
-        FIR filter order.  Determines stopband attenuation.  The higher
-        the better, ath the cost of complexity.
+    Args:
+        up: int. The upsampling factor.
+        down: int. The downsampling factor.
+        beta: float. Beta factor for Kaiser window.  Determines tradeoff between
+            stopband attenuation and transition band width
+        L: int. FIR filter order.  Determines stopband attenuation.  The higher
+            the better, ath the cost of complexity.
         
-    Returns
-    -------
-    filt : array
-        The FIR filter coefficients
+    Returns:
+
+        filt: array The FIR filter coefficients
         
-    Notes
-    -----
     This function is to be used if you want to manage your own filters
     to be used with scipy.signal.resample_poly (use the `window=...`
     parameter).  WARNING: Some versions (at least 0.19.1) of scipy
@@ -95,6 +84,9 @@ def _nnresample_compute_filt(up, down, beta=5.0, L=32001):
     """
     
     # Determine our up and down factors
+    import scipy.signal as sig
+    from math import gcd
+
     g = gcd(up, down)
     up = up//g
     down = down//g
@@ -121,22 +113,22 @@ def _nnresample_compute_filt(up, down, beta=5.0, L=32001):
     return sig.fir_filter_design.firwin(L, -firstnull+2/max_rate, window=('kaiser', beta))
 
 
-def _resample_nnresample(samples: np.ndarray, sr:int, newsr:int) -> np.ndarray:
+def _resample_nnresample(samples: np.ndarray, sr: int, newsr: int) -> np.ndarray:
     return _applyMultichan(samples,
                            lambda S: _resample_nnresample2(S, newsr, sr)[:-1])
 
 
-def _resample_nnresample_package(samples: np.ndarray, sr:int, newsr:int) -> np.ndarray:
+def _resample_nnresample_package(samples: np.ndarray, sr: int, newsr: int) -> np.ndarray:
     return _applyMultichan(samples,
                            lambda S: _resample_nnresample_package_mono(S, newsr, sr)[:-1])
 
 
-def _resample_nnresample_package_mono(s:np.ndarray, up:int, down:int, **kws) -> np.ndarray:
+def _resample_nnresample_package_mono(s: np.ndarray, up: int, down: int, **kws) -> np.ndarray:
     import nnresample
     return nnresample.resample(s, up, down, axis=0, fc='nn', **kws)
 
 
-def _resample_nnresample2(s:np.ndarray, up:int, down:int, beta=5.0, L=16001, axis=0
+def _resample_nnresample2(s: np.ndarray, up: int, down: int, beta=5.0, L=16001, axis=0
                           ) -> np.ndarray:
     """
     Taken from https://github.com/jthiem/nnresample
@@ -164,6 +156,8 @@ def _resample_nnresample2(s:np.ndarray, up:int, down:int, beta=5.0, L=16001, axi
         recomputed.
     """
     # check if a resampling filter with the chosen parameters already exists
+    import scipy.signal as sig
+
     params = (up, down, beta, L)
     if params in _precomputed_filters.keys():
         # if so, use it.
@@ -175,11 +169,12 @@ def _resample_nnresample2(s:np.ndarray, up:int, down:int, beta=5.0, L=16001, axi
     return sig.resample_poly(s, up, down, window=np.array(filt), axis=axis)
 
 
-def _resample_obspy(samples:np.ndarray, sr:int, newsr:int, window='hanning', lowpass=True
+def _resample_obspy(samples: np.ndarray, sr: int, newsr: int, window='hanning', lowpass=True
                     ) -> np.ndarray:
     """
-    Resample using Fourier method. The same as resample_scipy but with
-    low-pass filtering for upsampling
+    Resample using Fourier method. 
+    
+    The same as resample_scipy but with low-pass filtering for upsampling
     """
     from scipy.signal import resample
     from math import ceil
@@ -192,6 +187,7 @@ def _resample_obspy(samples:np.ndarray, sr:int, newsr:int, window='hanning', low
                         "above 16. Manual resampling is necessary.")
         freq = min(sr, newsr) * 0.5 / float(factor)
         logger.debug(f"resample_obspy: lowpass {freq}")
+        from .dsp import lowpass_cheby
         samples = lowpass_cheby(samples, freq=freq, sr=sr, maxorder=12)
     num = int(ceil(len(samples) / factor))
 
@@ -199,7 +195,7 @@ def _resample_obspy(samples:np.ndarray, sr:int, newsr:int, window='hanning', low
                            lambda S: resample(S, num, window=window))
 
 
-def resample(samples: np.ndarray, oldsr:int, newsr:int) -> np.ndarray:
+def resample(samples: np.ndarray, oldsr: int, newsr: int) -> np.ndarray:
     """
     Resample `samples` with given samplerate `sr` to new samplerate `newsr`
 

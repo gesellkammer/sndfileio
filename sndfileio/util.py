@@ -8,7 +8,6 @@ if TYPE_CHECKING:
     from typing import Callable, Iterator
 
 
-
 encodings_for_format = {
     'wav': ['pcm16', 'pcm24', 'pcm32', 'float32', 'float64'],
     'aiff': ['pcm16', 'pcm24', 'pcm32', 'float32', 'float64'],
@@ -346,7 +345,7 @@ def guess_encoding(data: np.ndarray, fmt: str) -> str:
     return encoding
 
 
-def chunks(start: int, end: int, step: int) -> Iterator[Tuple[int, int]]:
+def chunks(start: int, end: int, step: int) -> Iterator[tuple[int, int]]:
     pos = start
     last_full = end - step
     while pos < last_full:
