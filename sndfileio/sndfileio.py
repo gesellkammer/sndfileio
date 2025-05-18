@@ -727,17 +727,12 @@ class _Soundfile(Backend):
     def _getinfo(self, snd: _soundfile.SoundFile, ) -> SndInfo:
         encoding = _Soundfile.subtype_to_encoding.get(snd.subtype, '')
         fileformat = _Soundfile.format_to_fileformat.get(snd.format, '')
-        metadata = {}
-        for key in self.metadata_keys:
-            value = getattr(snd, key, None)
-            if value:
-                metadata[key] = value
-
         ext = _os.path.splitext(snd.name)[1]
         if ext == '.ogg' or ext == '.mp3':
-            metadata = util.tinytagMetadata(snd.name)
-            bitrate = metadata.pop('bitrate', 0)
+            meta = util.tinytagMetadata(snd.name)
+            bitrate = meta.pop('bitrate', 0)
         else:
+            meta = {k: v for k in self.metadata_keys if (v := getattr(snd, k, ''))}
             bitrate = 0
 
         return SndInfo(samplerate=snd.samplerate,
@@ -745,7 +740,7 @@ class _Soundfile(Backend):
                        channels=snd.channels,
                        encoding=encoding,
                        fileformat=fileformat,
-                       metadata=metadata,
+                       metadata=meta,
                        bitrate=bitrate)
 
     @staticmethod
@@ -916,9 +911,6 @@ _BACKENDS: dict[str, Backend] = {
     # 'miniaudio': _Miniaudio(priority=10),
 }
 
-# if _is_package_installed('pysndfile'):
-#     _BACKENDS['pysndfile'] = _PySndfile(priority=1)
-
 
 _cache = {}
 
@@ -934,7 +926,9 @@ def report_backends():
 def _get_backends() -> list[Backend]:
     backends = _cache.get('backends')
     if not backends:
-        _cache['backends'] = backends = [b for b in _BACKENDS.values() if b.is_available()]
+        backends = [b for b in _BACKENDS.values() if b.is_available()]
+        backends.sort(key=lambda b: b.priority)
+        _cache['backends'] = backends
     return backends
 
 
@@ -957,21 +951,15 @@ def _get_backend(path='', key: Callable[[Backend], bool] | None = None
         ...                        key=lambda backend:backend.can_read_chunked())
     """
     filetype = util.detect_format(path)
+    if not filetype:
+        raise ValueError(f"File type for {path} not supported")
     backends = _get_backends()
+    backends = [b for b in backends if filetype in b.filetypes_read]
     if key:
         backends = [b for b in backends if key(b)]
-    if filetype:
-        backends = [b for b in backends if filetype in b.filetypes_read]
-    if backends:
-        return min(backends, key=lambda backend: backend.priority)
-    return None
+    return backends[0] if backends else None
 
 
 def _get_write_backend(fileformat: str) -> Backend | None:
     backends = _get_backends()
-    if not backends:
-        raise SndfileError("No available backends for writing")
-    backends = [b for b in backends if fileformat in b.filetypes_write]
-    if backends:
-        return min(backends, key=lambda backend: backend.priority)
-    return None
+    return next((b for b in backends if fileformat in b.filetypes_write), None)
