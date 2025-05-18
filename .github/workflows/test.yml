@@ -9,7 +9,7 @@ jobs:
     strategy:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
-        python-version: ["3.9", "3.11"]
+        python-version: ["3.9", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
@@ -29,6 +29,7 @@ jobs:
           python test1.py -o "out-${{ matrix.os }}.mp3"
           ls -l sndout
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
+          name: artifact-${{ matrix.os }}-${{ matrix.python-version }}${{ strategy.job-index }}
           path: test/sndout/*
