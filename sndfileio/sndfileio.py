@@ -1,9 +1,8 @@
 from __future__ import annotations
 import os as _os
 import sys as _sys
-import numpy as np
 from importlib.util import find_spec as _find_spec
-import logging
+
 
 try:
     import soundfile as _soundfile
@@ -21,9 +20,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .datastructs import sample_t
     from typing import Iterator, Callable, Type
-
-
-logger = logging.getLogger("sndfileio")
+    import numpy as np
 
 
 __all__ = [
@@ -90,7 +87,6 @@ def sndread(path: str, start: float = 0, end: float = 0) -> sample_t:
     backend = _get_backend(path)
     if not backend:
         raise RuntimeError(f"No backend available to read {path}")
-    logger.debug(f"sndread: using backend {backend.name}")
     return backend.read(path, start=start, end=end)
 
 
@@ -123,7 +119,6 @@ def sndread_chunked(path: str, chunksize: int = 2048, start: float = 0., stop: f
     path = _normalize_path(path)
     backend = _get_backend(path, key=lambda backend: backend.can_read_chunked)
     if backend:
-        logger.debug(f"sndread_chunked: using backend {backend.name}")
         return backend.read_chunked(path, chunksize, start=start, stop=stop)
     else:
         raise SndfileError("chunked reading is not supported by the "
@@ -155,7 +150,6 @@ def sndinfo(path: str) -> SndInfo:
     backend = _get_backend(path)
     if not backend:
         raise FormatNotSupported("sndinfo: no backend supports this filetype")
-    logger.debug(f"sndinfo: using backend {backend.name}")
     return backend.getinfo(path)
 
 
@@ -187,7 +181,6 @@ def sndget(path: str, start: float = 0, end: float = 0) -> tuple[np.ndarray, Snd
     backend = _get_backend(path)
     if not backend:
         raise RuntimeError(f"No backend available to read {path}")
-    logger.debug(f"sndread: using backend {backend.name}")
     return backend.read_with_info(path, start=start, end=end)
 
 
@@ -287,12 +280,10 @@ def sndwrite(outfile: str,
         clipping = ((samples > 1).any() or (samples < -1).any())
         if clipping:
             maxvalue = max(samples.max(), abs(samples.min()))
-            logger.warning(f"Clipping found when writing pcm data to {outfile}")
             samples = samples / maxvalue
     backend = _get_write_backend(fileformat)
     if not backend:
         raise SndfileError(f"No backend found to support the given format: {fileformat}")
-    logger.debug(f"sndwrite: using backend {backend.name}")
     writer = backend.writer(sr=sr, outfile=outfile, encoding=encoding, metadata=metadata,
                             fileformat=fileformat, **options)
     if not writer:
@@ -361,7 +352,6 @@ def sndwrite_chunked(outfile: str,
     if not backends:
         raise SndfileError(f"No backend found to support the format {fileformat}")
     backend = min(backends, key=lambda backend: backend.priority)
-    logger.debug(f"sndwrite_chunked: using backend {backend.name}")
     return backend.writer(outfile, sr, encoding, metadata=metadata, fileformat=fileformat,
                           **options)
 
@@ -407,11 +397,6 @@ def sndwrite_like(outfile: str, samples: np.ndarray, likefile: str, sr=0,
     """
     outfile = _normalize_path(outfile)
     info = sndinfo(likefile)
-    ext = _os.path.splitext(outfile)[1]
-    outfileformat = util.fileformat_from_ext(ext)
-    if outfileformat != info.fileformat:
-        logger.warning(f"Trying to save to a file with extension {ext}, but fileformat"
-                       f"will be {info.fileformat}")
     sndwrite(outfile=outfile, samples=samples, sr=sr or info.samplerate,
              fileformat=info.fileformat, encoding=info.encoding,
              metadata=metadata or info.metadata)
